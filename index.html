@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flight Update</title>
+  <meta name="description" content="Lists your upcoming flights from booking emails in Gmail.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <main>
+    <header class="top">
+      <div>
+        <h1>✈ Flight Update</h1>
+        <p class="sub">Your upcoming flights, read from your booking emails in Gmail.</p>
+      </div>
+      <div class="actions">
+        <button id="signin" class="primary">Sign in with Google</button>
+        <button id="scan" class="primary" hidden>Rescan Gmail</button>
+        <button id="signout" hidden>Sign out</button>
+        <button id="demo">Try demo</button>
+      </div>
+    </header>
+
+    <details id="settings">
+      <summary>Settings</summary>
+      <div class="settings">
+        <label>Google OAuth client ID
+          <input id="client-id" type="text" placeholder="1234567890-abc….apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="hint">Add <code id="origin"></code> as an <em>Authorized JavaScript origin</em> on that client. See the README for setup steps.</p>
+        <label>Gmail search query
+          <textarea id="query" rows="2" spellcheck="false"></textarea>
+        </label>
+        <label>Max emails to scan
+          <input id="max-emails" type="number" min="10" max="2000" step="10">
+        </label>
+        <div class="row">
+          <button id="save-settings" class="primary">Save</button>
+          <button id="reset-query" type="button">Reset query</button>
+        </div>
+      </div>
+    </details>
+
+    <div id="status" class="status" role="status" hidden></div>
+
+    <div class="toolbar">
+      <span id="summary"></span>
+      <label><input type="checkbox" id="show-past"> Show past flights</label>
+      <label><input type="checkbox" id="show-cancelled"> Show cancelled</label>
+    </div>
+
+    <section id="flights" aria-live="polite"></section>
+
+    <p class="privacy">🔒 Runs entirely in your browser with read-only Gmail access. Your emails are never sent to any server other than Google's.</p>
+  </main>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "flight-update",
+  "version": "1.0.0",
+  "description": "Reads flight booking emails from Gmail and lists your upcoming flights.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "test": "node --test"
+  }
+}

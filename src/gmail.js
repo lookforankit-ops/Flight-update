@@ -1,0 +1,84 @@
+// Minimal Gmail REST client that runs in the browser with an OAuth access token.
+
+const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
+
+export const DEFAULT_QUERY =
+  'newer_than:1y -in:spam {flight flights itinerary e-ticket eticket "boarding pass" PNR "booking reference" "confirmation code" "record locator"}';
+
+async function api(token, path) {
+  const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const body = await res.text();
+    const err = new Error(`Gmail API ${res.status}: ${body.slice(0, 300)}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+export async function listMessageIds(token, query, max = 300) {
+  const ids = [];
+  let pageToken = '';
+  while (ids.length < max) {
+    const params = new URLSearchParams({ q: query, maxResults: String(Math.min(100, max - ids.length)) });
+    if (pageToken) params.set('pageToken', pageToken);
+    const data = await api(token, `/messages?${params}`);
+    (data.messages || []).forEach((m) => ids.push(m.id));
+    if (!data.nextPageToken) break;
+    pageToken = data.nextPageToken;
+  }
+  return ids;
+}
+
+function decodeBase64Url(data) {
+  const b64 = data.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64);
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+function walkParts(part, out) {
+  if (!part) return;
+  const mime = (part.mimeType || '').toLowerCase();
+  if (part.body?.data) {
+    if (mime === 'text/html') out.html += decodeBase64Url(part.body.data);
+    else if (mime === 'text/plain') out.text += decodeBase64Url(part.body.data);
+  }
+  (part.parts || []).forEach((p) => walkParts(p, out));
+}
+
+export async function getMessage(token, id) {
+  const msg = await api(token, `/messages/${id}?format=full`);
+  const headers = Object.fromEntries((msg.payload?.headers || []).map((h) => [h.name.toLowerCase(), h.value]));
+  const out = { html: '', text: '' };
+  walkParts(msg.payload, out);
+  return {
+    id,
+    subject: headers.subject || '',
+    from: headers.from || '',
+    date: msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : headers.date,
+    html: out.html,
+    text: out.text,
+  };
+}
+
+// Fetch many messages with limited concurrency, reporting progress.
+export async function getMessages(token, ids, onProgress, concurrency = 6) {
+  const results = new Array(ids.length);
+  let next = 0;
+  let done = 0;
+  async function worker() {
+    while (next < ids.length) {
+      const i = next++;
+      try {
+        results[i] = await getMessage(token, ids[i]);
+      } catch (e) {
+        if (e.status === 401) throw e;
+        results[i] = null;
+      }
+      onProgress?.(++done, ids.length);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker));
+  return results.filter(Boolean);
+}

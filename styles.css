@@ -1,0 +1,67 @@
+:root {
+  --bg: #f5f6f8; --surface: #ffffff; --text: #1b1f24; --muted: #5f6b7a; --border: #e1e5ea;
+  --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --error: #cf222e;
+  --chip: #eef2f7;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216; --surface: #171b21; --text: #e6e9ee; --muted: #93a0b0; --border: #2a313b;
+    --accent: #4c8dff; --accent-text: #0b0d10; --ok: #4ac26b; --warn: #d4a72c; --error: #ff6b6b;
+    --chip: #222932;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 820px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { margin: 0; font-size: 1.6rem; }
+.sub { margin: 4px 0 0; color: var(--muted); }
+.top { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; margin-bottom: 16px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .6; cursor: progress; }
+details { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; }
+summary { cursor: pointer; font-weight: 600; }
+.settings { display: grid; gap: 12px; margin-top: 12px; }
+.settings label { display: grid; gap: 4px; font-weight: 500; }
+input[type=text], input[type=number], textarea { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); width: 100%; }
+textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.hint { margin: -6px 0 0; color: var(--muted); font-size: 13px; }
+code { background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+.row { display: flex; gap: 8px; }
+.status { padding: 10px 14px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); margin-bottom: 16px; }
+.status.ok { border-color: var(--ok); }
+.status.warn { border-color: var(--warn); }
+.status.error { border-color: var(--error); color: var(--error); }
+.toolbar { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; color: var(--muted); }
+.toolbar #summary { margin-right: auto; font-weight: 600; color: var(--text); }
+#flights { display: grid; gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.card.past { opacity: .65; }
+.card.cancelled .route { text-decoration: line-through; opacity: .6; }
+.card.cancelled .when { color: var(--error); }
+.card header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.date { font-weight: 600; }
+.when { color: var(--accent); font-size: 13px; font-weight: 600; }
+.flightno { text-align: right; }
+.flightno strong { display: block; font-size: 1.05rem; }
+.flightno span { color: var(--muted); font-size: 13px; }
+.route { display: grid; grid-template-columns: 1fr minmax(40px, 2fr) 1fr; align-items: center; gap: 12px; margin: 14px 0; }
+.end.right { text-align: right; }
+.code { font-size: 1.9rem; font-weight: 700; letter-spacing: .02em; line-height: 1.1; }
+.time { font-size: 1.05rem; font-weight: 600; }
+.plus { color: var(--warn); font-size: 12px; vertical-align: super; }
+.name { color: var(--muted); font-size: 12px; min-height: 1em; }
+.line { position: relative; border-top: 2px dashed var(--border); text-align: center; }
+.line span { position: relative; top: -0.8em; background: var(--surface); padding: 0 6px; color: var(--muted); }
+.card footer { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 13px; border-top: 1px solid var(--border); padding-top: 10px; }
+.chip { background: var(--chip); padding: 2px 8px; border-radius: 999px; }
+.chip.muted { color: var(--muted); }
+.src { color: var(--muted); margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.src a { color: inherit; }
+.empty, .privacy { color: var(--muted); text-align: center; }
+.privacy { margin-top: 32px; font-size: 13px; }
+@media (max-width: 520px) {
+  .code { font-size: 1.5rem; }
+  .src { margin-left: 0; }
+}
