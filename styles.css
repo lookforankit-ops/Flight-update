@@ -183,3 +183,10 @@ details.skipped li { background: var(--bg); border-radius: 10px; padding: 10px 1
 .sk-from { color: var(--muted); font-size: 12px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 details.skipped a, details.skipped button.link { color: var(--accent); font-size: 13px; padding: 4px 0; text-decoration: none; background: none; }
 details.skipped .row { gap: 16px; }
+
+.sk-tools { display: grid; gap: 8px; margin: 8px 0; }
+.sk-tools .check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.sk-tools .check input { width: auto; }
+.sk-result { font-size: 13px; margin: 2px 0 4px; }
+details.skipped li.found .sk-result { color: var(--ok); }
+details.skipped li.none .sk-result { color: var(--warn); }

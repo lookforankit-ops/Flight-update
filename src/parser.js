@@ -27,7 +27,7 @@ const AIRLINES = {
   G9: 'Air Arabia', WY: 'Oman Air', GF: 'Gulf Air', SV: 'Saudia', KU: 'Kuwait Airways', NZ: 'Air New Zealand',
 };
 
-import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031646';
+import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031659';
 
 const pad = (n) => String(n).padStart(2, '0');
 

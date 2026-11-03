@@ -1,8 +1,8 @@
-import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611031646';
-import { DEFAULT_QUERY, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031646';
-import { sampleMessages } from './samples.js?v=202611031646';
-import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031646';
-import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031646';
+import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611031659';
+import { DEFAULT_QUERY, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031659';
+import { sampleMessages } from './samples.js?v=202611031659';
+import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031659';
+import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031659';
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
@@ -291,37 +291,65 @@ function render() {
   }).join('');
 }
 
-// Emails from the last scan where no flight was found (kept in memory only, for the Settings panel).
-let skipped = [];
+// Every email from the last scan and what was read from it (kept in memory only, for the Settings panel).
+let scanned = [];
+
+function flightSummary(f) {
+  const bits = [`${f.flightNumber} ${f.from}→${f.to} ${formatDate(f.date)}`];
+  if (f.cancelled) bits.push('cancelled');
+  else if (daysUntil(f.date) < 0) bits.push('past');
+  return bits.join(', ');
+}
 
 function renderSkipped() {
   const box = $('#skipped');
-  if (!skipped.length) { box.hidden = true; return; }
+  if (!scanned.length) { box.hidden = true; return; }
   box.hidden = false;
-  box.querySelector('summary').textContent = `Emails with no flights found (${skipped.length})`;
-  box.querySelector('ul').innerHTML = skipped.map((m, i) => `
-    <li>
+  const none = scanned.filter((m) => !m.flights.length).length;
+  box.querySelector('summary').textContent = `Scanned emails (${scanned.length}) · ${none} with no flights`;
+  const q = ($('#sk-filter').value || '').trim().toLowerCase();
+  const onlyNone = $('#sk-only-none').checked;
+  const rows = scanned
+    .map((m, i) => ({ m, i }))
+    .filter(({ m }) => (!onlyNone || !m.flights.length) && (!q || `${m.subject} ${m.from}`.toLowerCase().includes(q)));
+  box.querySelector('ul').innerHTML = rows.length ? rows.map(({ m, i }) => `
+    <li class="${m.flights.length ? 'found' : 'none'}">
       <div class="sk-subj">${escapeHtml(m.subject || '(no subject)')}</div>
-      <div class="sk-from">${escapeHtml(m.from)} · ${escapeHtml(m.why)}</div>
+      <div class="sk-from">${escapeHtml(m.from)}${m.date ? ` · ${escapeHtml(new Date(m.date).toLocaleDateString())}` : ''}</div>
+      <div class="sk-result">${m.flights.length ? `✈ ${m.flights.map((f) => escapeHtml(flightSummary(f))).join('<br>✈ ')}` : escapeHtml(m.why)}</div>
       <div class="row">
         ${m.id.startsWith('demo-') ? '' : `<a href="https://mail.google.com/mail/u/0/#all/${escapeHtml(m.id)}" target="_blank" rel="noopener">Open in Gmail</a>`}
         <button type="button" class="link" data-copy="${i}">Copy email text</button>
       </div>
-    </li>`).join('');
+    </li>`).join('') : '<li class="none">No matching emails.</li>';
+}
+
+// Text to share when a booking is read wrongly: both MIME parts plus any structured booking data.
+function shareableText(m) {
+  const ld = [...(m.html || '').matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)].map((x) => x[1].trim());
+  return [
+    `Subject: ${m.subject}`, `From: ${m.from}`, `Date: ${m.date || ''}`,
+    `Read as: ${m.flights.length ? m.flights.map(flightSummary).join(' | ') : m.why}`,
+    '', '--- Plain-text part ---', (m.text || '').trim() || '(none)',
+    '', '--- HTML part as text ---', m.html ? htmlToText(m.html) : '(none)',
+    ...(ld.length ? ['', '--- Structured booking data ---', ...ld] : []),
+  ].join('\n').slice(0, 60000);
 }
 
 function processMessages(messages) {
-  skipped = [];
+  scanned = [];
   const flights = messages.flatMap((m) => {
     let found = [];
-    try { found = extractFlights(m); } catch (e) { console.warn('Parse failed', m.id, e); }
-    if (!found.length) {
-      const body = (m.text && m.text.trim()) || htmlToText(m.html || '');
-      const why = classifyEmail({ subject: m.subject, body }).promo ? 'Looks like an advert' : 'No flight with a booking reference found';
-      skipped.push({ id: m.id, subject: m.subject, from: m.from, body, why });
+    let why = '';
+    try { found = extractFlights(m); } catch (e) { console.warn('Parse failed', m.id, e); why = `Error while reading: ${e.message}`; }
+    if (!found.length && !why) {
+      const body = [m.text, htmlToText(m.html || '')].filter(Boolean).join('\n');
+      why = classifyEmail({ subject: m.subject, body }).promo ? 'Skipped: looks like an advert' : 'No flight with a booking reference found';
     }
+    scanned.push({ ...m, flights: found, why });
     return found;
   });
+  scanned.sort((a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0));
   renderSkipped();
   allFlights = mergeFlights(flights);
   store.set('lastResults', JSON.stringify({ at: Date.now(), flights: allFlights }));
@@ -487,11 +515,13 @@ function init() {
     location.replace(`${location.pathname}?reload=${Date.now()}`);
   });
   $('#query').value = store.get('query', DEFAULT_QUERY);
+  $('#sk-filter').addEventListener('input', renderSkipped);
+  $('#sk-only-none').addEventListener('change', renderSkipped);
   $('#skipped').addEventListener('click', async (ev) => {
     const btn = ev.target.closest('[data-copy]');
     if (!btn) return;
-    const m = skipped[Number(btn.dataset.copy)];
-    const text = `Subject: ${m.subject}\nFrom: ${m.from}\n\n${m.body}`.slice(0, 20000);
+    const m = scanned[Number(btn.dataset.copy)];
+    const text = shareableText(m);
     try {
       await navigator.clipboard.writeText(text);
       btn.textContent = 'Copied ✓';

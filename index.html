@@ -7,13 +7,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>My Flights</title>
-  <meta name="app-version" content="202611031646">
+  <meta name="app-version" content="202611031659">
   <meta name="description" content="Lists your upcoming flights from booking emails in Gmail.">
   <meta name="apple-mobile-web-app-title" content="Flights">
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=202611031646">
+  <link rel="stylesheet" href="styles.css?v=202611031659">
   <script src="config.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -69,7 +69,11 @@
         <p class="hint">App version <span id="app-version"></span> · <a href="#" id="hard-reload">Reload latest version</a></p>
         <details id="skipped" class="skipped" hidden>
           <summary></summary>
-          <p class="hint">These matched the search but no flight could be read from them. If one is a real booking, copy its text (remove anything private), and share it so the reader can be taught that format.</p>
+          <p class="hint">Every email the last scan read, and what was found in it. If a booking is missing or wrong, find its email here, copy its text (remove anything private) and share it so the reader can be taught that format. If the email isn't listed at all, the Gmail search didn't find it.</p>
+          <div class="sk-tools">
+            <input id="sk-filter" type="search" placeholder="Filter by subject or sender, e.g. Etihad" autocomplete="off" spellcheck="false">
+            <label class="check"><input type="checkbox" id="sk-only-none"> Only emails with no flights</label>
+          </div>
           <ul></ul>
         </details>
       </div>
@@ -87,6 +91,6 @@
 
     <p class="privacy">Runs entirely in your browser with read-only Gmail access. Your emails are never sent to any server other than Google's. Tap a flight for booking details, calendar and check-in.</p>
   </main>
-  <script type="module" src="src/app.js?v=202611031646"></script>
+  <script type="module" src="src/app.js?v=202611031659"></script>
 </body>
 </html>
