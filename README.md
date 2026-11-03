@@ -48,9 +48,15 @@ The results of the last scan are cached in your browser so the list shows right 
 
 Which flights are in your calendar is remembered in this browser. Each event also has a fixed ID derived from its flight number and date. So syncing from another device updates the existing event rather than adding a second one.
 
-## Hosting it
+## Hosting it (GitHub Pages)
 
-These are static files, so any static host works (GitHub Pages, Netlify and others). Add the hosted URL as an Authorized JavaScript origin on your OAuth client.
+The workflow `.github/workflows/pages.yml` tests and publishes the web app on every push, at `https://lookforankit-ops.github.io/Flight-update/`. The check-in agent isn't published; it runs on a computer.
+
+One-time setup:
+1. In the repo, go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**. Then re-run the latest "Deploy to GitHub Pages" workflow from the **Actions** tab, or push any change.
+2. On your Google OAuth client, add `https://lookforankit-ops.github.io` (no path) as an **Authorized JavaScript origin**.
+3. Open the site on your phone, open Settings (the sliders button), and paste your client ID. You can also put it in `config.js`; it isn't a secret.
+4. In Safari use **Share → Add to Home Screen**, or in Chrome use **⋮ → Add to Home screen**. It then opens full-screen like an app.
 
 ## Development
 
