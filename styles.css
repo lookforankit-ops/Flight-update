@@ -32,9 +32,18 @@ button.round {
   background: var(--surface); border: 1px solid var(--separator); color: var(--text); cursor: pointer;
 }
 button.round svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-button.round:disabled svg { animation: spin 1s linear infinite; }
-button.round.avatar { background: linear-gradient(160deg, #8e8e93, #48484a); border: 0; }
-button.round.avatar.signed-in { background: linear-gradient(160deg, #64d2ff, #0a84ff); }
+button.round { position: relative; }
+button.round:disabled { opacity: 1; }
+button.round:disabled::after {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%;
+  border: 2.5px solid transparent; border-top-color: var(--accent); animation: spin .9s linear infinite;
+}
+button.round.gmail svg.gmail-logo { width: 26px; height: 26px; }
+button.round.cal-round { color: var(--accent); }
+.count-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  background: var(--error); color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center;
+}
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- generic controls ---------- */
@@ -87,13 +96,27 @@ button.pill.accent { color: var(--accent); }
 
 .body { border-bottom: 1px solid var(--separator); padding: 22px 20px 22px 4px; min-width: 0; }
 .meta { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 17px; }
+.logo {
+  flex: none; width: 28px; height: 28px; border-radius: 7px; background: #fff; overflow: hidden;
+  display: grid; place-items: center;
+}
+.logo img { width: 100%; height: 100%; object-fit: contain; padding: 2px; display: block; }
 .badge {
-  flex: none; width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center;
+  flex: none; width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center;
   font-size: 10px; font-weight: 800; letter-spacing: -.02em; color: #fff;
   background: hsl(var(--h, 210) 38% 40%);
 }
 .fno { white-space: nowrap; }
 .when { margin-left: auto; white-space: nowrap; text-align: right; }
+.cal-btn {
+  flex: none; width: 34px; height: 34px; border-radius: 50%; padding: 0; display: grid; place-items: center; position: relative;
+  background: var(--surface); color: var(--accent); border: 0; text-decoration: none;
+}
+.cal-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.cal-btn.synced { color: var(--ok); }
+.cal-btn.remove { color: var(--error); }
+.cal-btn.update::after { content: ''; position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--soon); }
+.flight.past .cal-btn { visibility: hidden; }
 .when.soon { color: var(--soon); }
 .when.bad { color: var(--error); }
 .when.done { color: var(--muted); }
@@ -145,6 +168,7 @@ button.pill.accent { color: var(--accent); }
   .count .unit { font-size: 11px; letter-spacing: .03em; }
   .body { padding-right: 16px; }
   .meta { font-size: 15px; gap: 8px; }
+  .cal-btn { width: 32px; height: 32px; }
   .cities { font-size: 20px; }
   h1 { font-size: 32px; }
   button.round { width: 44px; height: 44px; }

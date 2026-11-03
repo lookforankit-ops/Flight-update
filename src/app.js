@@ -65,6 +65,40 @@ function checkinLink(f) {
   return `<a class="chip action" href="${escapeHtml(base)}/#flight=${b64}" target="_blank" rel="noopener" title="Opens the check-in agent running on your computer">🛂 Web check-in</a>`;
 }
 
+const CAL_ADD = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4M12 13v5M9.5 15.5h5"/></svg>';
+const CAL_OK = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4M9 15l2 2 4-4"/></svg>';
+const CAL_DEL = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4M9.5 15.5h5"/></svg>';
+
+// Small round calendar button shown on every flight row.
+function calendarIcon(f, map) {
+  const state = calendarState(f, map);
+  const key = escapeHtml(flightKey(f));
+  const entry = map[flightKey(f)];
+  switch (state) {
+    case 'demo':
+    case 'add': return `<button class="cal-btn" data-cal="${key}" title="Add to Google Calendar" aria-label="Add ${escapeHtml(f.flightNumber)} to Google Calendar">${CAL_ADD}</button>`;
+    case 'update': return `<button class="cal-btn update" data-cal="${key}" title="Flight details changed: update in Google Calendar" aria-label="Update ${escapeHtml(f.flightNumber)} in Google Calendar">${CAL_ADD}</button>`;
+    case 'remove': return `<button class="cal-btn remove" data-cal="${key}" title="Cancelled: remove from Google Calendar" aria-label="Remove ${escapeHtml(f.flightNumber)} from Google Calendar">${CAL_DEL}</button>`;
+    case 'synced': return entry?.link
+      ? `<a class="cal-btn synced" href="${escapeHtml(entry.link)}" target="_blank" rel="noopener" title="In Google Calendar (open event)" aria-label="Open ${escapeHtml(f.flightNumber)} in Google Calendar">${CAL_OK}</a>`
+      : `<span class="cal-btn synced" title="In Google Calendar">${CAL_OK}</span>`;
+    default: return '';
+  }
+}
+
+// Airline logo from public logo services; falls back to a coloured code badge (see the error handler in init).
+const LOGO_SOURCES = [
+  (c) => `https://pics.avs.io/64/64/${c}@2x.png`,
+  (c) => `https://images.kiwi.com/airlines/64/${c}.png`,
+];
+function airlineLogo(code, airline) {
+  if (!/^[A-Z0-9]{2}$/.test(code)) return airlineBadge(code, airline);
+  return `<span class="logo" title="${escapeHtml(airline || code)}"><img src="${LOGO_SOURCES[0](code)}" data-code="${code}" data-step="0" alt="${escapeHtml(airline || code)}" loading="lazy" referrerpolicy="no-referrer"></span>`;
+}
+function airlineBadge(code, airline) {
+  return `<span class="badge" style="--h:${airlineHue(code)}" title="${escapeHtml(airline || code)}">${escapeHtml(code)}</span>`;
+}
+
 function calendarControl(f, map) {
   const state = calendarState(f, map);
   const key = escapeHtml(flightKey(f));
@@ -174,9 +208,16 @@ function render() {
   const container = $('#flights');
   const map = synced();
   const pending = allFlights.filter((f) => ['add', 'update', 'remove'].includes(calendarState(f, map)));
-  $('#cal-all').hidden = pending.length === 0;
+  const syncable = allFlights.filter((f) => !['none', 'demo'].includes(calendarState(f, map)) || (isDemo(f) && daysUntil(f.date) >= 0 && !f.cancelled));
+  $('#cal-all').hidden = syncable.length === 0;
   $('#cal-all').disabled = calendarBusy;
-  $('#cal-all').textContent = `Sync ${pending.length} to Calendar`;
+  $('#cal-count').hidden = pending.length === 0;
+  $('#cal-count').textContent = String(pending.length);
+  const calTitle = pending.length
+    ? `Sync ${pending.length} flight${pending.length === 1 ? '' : 's'} to Google Calendar`
+    : 'All flights are in Google Calendar';
+  $('#cal-all').title = calTitle;
+  $('#cal-all').setAttribute('aria-label', calTitle);
   $('#toolbar').hidden = allFlights.length === 0;
   $('#welcome').hidden = allFlights.length > 0 || !!accessToken;
 
@@ -209,9 +250,10 @@ function render() {
         <div class="count"><div class="big${cd.word ? ' word' : ''}">${escapeHtml(cd.big)}</div><div class="unit">${cd.unit}</div></div>
         <div class="body">
           <div class="meta">
-            <span class="badge" style="--h:${airlineHue(code)}" title="${escapeHtml(airline)}">${escapeHtml(code)}</span>
+            ${airlineLogo(code, airline)}
             <span class="fno">${escapeHtml(`${code} ${f.flightNumber.slice(2)}`)}</span>
             <span class="when ${label.cls}">${escapeHtml(label.text)}</span>
+            ${calendarIcon(f, map)}
           </div>
           <div class="cities"><b>${escapeHtml(fromCity)}</b> <span class="to">to</span> <b>${escapeHtml(toCity)}</b></div>
           <div class="times">
@@ -277,12 +319,10 @@ async function scan() {
 }
 
 function updateAuthUi() {
-  $('#scan').hidden = !accessToken;
   $('#signout').hidden = !accessToken;
-  const acct = $('#account');
-  acct.classList.toggle('signed-in', !!accessToken);
-  acct.title = accessToken ? 'Signed in (open settings to sign out)' : 'Sign in with Google';
-  acct.setAttribute('aria-label', acct.title);
+  const btn = $('#scan');
+  btn.title = accessToken ? 'Rescan Gmail for flights' : 'Sign in with Gmail';
+  btn.setAttribute('aria-label', btn.title);
   $('#welcome').hidden = allFlights.length > 0 || !!accessToken;
 }
 
@@ -334,7 +374,7 @@ async function syncToCalendar(flights) {
   const real = flights.filter((f) => !isDemo(f));
   if (!real.length) return setStatus('Demo flights can’t be added to your calendar. Sign in with Google to use your real flights.', 'warn');
   calendarBusy = true;
-  document.querySelectorAll('button.cal, #cal-all').forEach((b) => { b.disabled = true; });
+  document.querySelectorAll('button.cal, button.cal-btn, #cal-all').forEach((b) => { b.disabled = true; });
   const tokenPromise = getCalendarToken(); // start the popup synchronously, inside the click
   let ok = 0;
   const failed = [];
@@ -404,8 +444,7 @@ function init() {
   $('#reset-query').addEventListener('click', () => { $('#query').value = DEFAULT_QUERY; });
   $('#signin').addEventListener('click', signIn);
   $('#signout').addEventListener('click', signOut);
-  $('#scan').addEventListener('click', scan);
-  $('#account').addEventListener('click', () => (accessToken ? toggleSettings(true) : signIn()));
+  $('#scan').addEventListener('click', () => (accessToken ? scan() : signIn()));
   $('#settings-btn').addEventListener('click', () => toggleSettings());
   $('#demo-2').addEventListener('click', () => { toggleSettings(false); $('#demo').click(); });
   $('#demo').addEventListener('click', () => {
@@ -414,8 +453,22 @@ function init() {
   });
   $('#cal-all').addEventListener('click', () => {
     const map = synced();
-    syncToCalendar(allFlights.filter((f) => ['add', 'update', 'remove'].includes(calendarState(f, map))));
+    const todo = allFlights.filter((f) => ['add', 'update', 'remove', 'demo'].includes(calendarState(f, map)) && !(isDemo(f) && (f.cancelled || daysUntil(f.date) < 0)));
+    if (!todo.length) return setStatus('✓ All your upcoming flights are already in Google Calendar.', 'ok');
+    syncToCalendar(todo);
   });
+  // Logo didn't load: try the next source, then fall back to the code badge.
+  $('#flights').addEventListener('error', (ev) => {
+    const img = ev.target;
+    if (!(img instanceof HTMLImageElement) || !img.dataset.code) return;
+    const next = Number(img.dataset.step) + 1;
+    if (LOGO_SOURCES[next]) {
+      img.dataset.step = String(next);
+      img.src = LOGO_SOURCES[next](img.dataset.code);
+    } else {
+      img.parentElement.outerHTML = airlineBadge(img.dataset.code, img.alt);
+    }
+  }, true);
   const toggleRow = (row) => {
     const key = row.dataset.key;
     if (openKeys.has(key)) openKeys.delete(key); else openKeys.add(key);
