@@ -193,3 +193,14 @@ test('booking reference formats', () => {
   assert.equal(findConfirmation('PNR Status: Confirmed\nPNR: K7XQ2M'), 'K7XQ2M');
   assert.equal(findConfirmation('Confirmation email sent'), null);
 });
+
+// Real SmartBuy/Goibibo email text shared by the user (booking numbers replaced).
+test('SmartBuy via Goibibo e-ticket (real layout)', () => {
+  const text = `Your flight booking via GOIBIBO is Successful!\n\nBelow are the details of your confirmed flight.\n\n\nThank you for choosing SmartBuy!\n\n\nE-Ticket booked with\nGOIBIBO\nSuccess Booking Confirmed\nBooking ID: 40000000000000000001\nGOIBIBO Ref ID: GOFLIXX00X000000000000\nBooked on: Sun, 11 Oct 2026 08:56:40\nFor any assistance regarding your booking, please contact GOIBIBO:\nCall: +91 0000 0000000\nDeparture Flight\nDubai to New Delhi\n| Thu, 24 Dec 2026 20:40\n|\nECO VALUE\nAirline-Logo\nAir India\nAI - 916\nPNR Number\nQ7EV2M\nDXB Dubai\nThu, 24 Dec 2026 20:40\nDubai International Airport\nTerminal: T1\n3h 40m\nEconomy\nDEL New Delhi\nFri, 25 Dec 2026 01:50\nIndira Gandhi Airport\nTerminal: T3\nYour Fare Type Includes - ECO VALUE\n\tCabin Baggage: 7 Kgs\n\tCheck-in Baggage: 25 Kgs\n\tCancellation fee starts at ₹5,540\n\tDate Change fee starts at ₹13,185\n\tFree Seat\n`;
+  const subject = 'Your Flight Booking with SmartBuy is Successful - Order Reference-Number 40000000000000000001.';
+  for (const parts of [{ text }, { html: text.split('\n').map((l) => `<p>${l}</p>`).join('') }]) {
+    const flights = extractFlights({ id: 'sb24', subject, date: '2026-10-11T08:56:40Z', ...parts });
+    assert.deepEqual(flights.map((f) => [f.flightNumber, f.from, f.to, f.date, f.departureTime, f.arrivalDate, f.arrivalTime, f.confirmation, f.cancelled]),
+      [['AI916', 'DXB', 'DEL', '2026-12-24', '20:40', '2026-12-25', '01:50', 'Q7EV2M', false]]);
+  }
+});

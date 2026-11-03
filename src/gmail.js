@@ -2,12 +2,16 @@
 
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
+// Booking phrases and travel sites, rather than any mention of "flight", so adverts and newsletters
+// don't use up the scan limit and push older bookings out.
 export const DEFAULT_QUERY =
-  'newer_than:1y -in:spam {flight flights itinerary e-ticket eticket "boarding pass" PNR "booking reference" "confirmation code" "record locator" "booking id" "booking confirmation" "trip id" smartbuy from:smartbuy}';
+  'newer_than:1y -in:spam {PNR "booking reference" "booking ref" "booking id" "booking confirmation" "booking confirmed" "booking is confirmed" "e-ticket" eticket itinerary "boarding pass" "flight booking" "flight ticket" "your flight" "confirmation code" "record locator" "trip id" "web check-in" smartbuy goibibo makemytrip cleartrip yatra easemytrip ixigo}';
+export const DEFAULT_MAX_EMAILS = 600;
 
 // Earlier defaults, so a saved copy of one can be upgraded to the current default.
 export const OLD_DEFAULT_QUERIES = [
   'newer_than:1y -in:spam {flight flights itinerary e-ticket eticket "boarding pass" PNR "booking reference" "confirmation code" "record locator"}',
+  'newer_than:1y -in:spam {flight flights itinerary e-ticket eticket "boarding pass" PNR "booking reference" "confirmation code" "record locator" "booking id" "booking confirmation" "trip id" smartbuy from:smartbuy}',
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -41,18 +45,21 @@ async function api(token, path, attempts = 6) {
   }
 }
 
-export async function listMessageIds(token, query, max = 300) {
+// Newest first. `ids.truncated` is true when more emails matched than `max` (older ones were left out).
+export async function listMessageIds(token, query, max = DEFAULT_MAX_EMAILS) {
   const ids = [];
   let pageToken = '';
+  let truncated = false;
   while (ids.length < max) {
-    const params = new URLSearchParams({ q: query, maxResults: String(Math.min(100, max - ids.length)) });
+    const params = new URLSearchParams({ q: query, maxResults: String(Math.min(500, max - ids.length)) });
     if (pageToken) params.set('pageToken', pageToken);
     const data = await api(token, `/messages?${params}`);
     (data.messages || []).forEach((m) => ids.push(m.id));
     if (!data.nextPageToken) break;
     pageToken = data.nextPageToken;
+    if (ids.length >= max) truncated = true;
   }
-  return ids;
+  return Object.assign(ids.slice(0, max), { truncated });
 }
 
 function decodeBase64Url(data) {

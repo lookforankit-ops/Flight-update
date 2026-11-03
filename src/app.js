@@ -1,8 +1,8 @@
-import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611031702';
-import { DEFAULT_QUERY, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031702';
-import { sampleMessages } from './samples.js?v=202611031702';
-import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031702';
-import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031702';
+import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611031713';
+import { DEFAULT_QUERY, DEFAULT_MAX_EMAILS, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031713';
+import { sampleMessages } from './samples.js?v=202611031713';
+import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031713';
+import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031713';
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
@@ -365,7 +365,7 @@ function processMessages(messages) {
 
 async function scan() {
   const query = store.get('query', DEFAULT_QUERY);
-  const max = Number(store.get('maxEmails', '300'));
+  const max = Number(store.get('maxEmails', String(DEFAULT_MAX_EMAILS)));
   $('#scan').disabled = true;
   try {
     setStatus('Searching your Gmail for flight emails…');
@@ -379,6 +379,8 @@ async function scan() {
     processMessages(messages);
     if (messages.failed?.length) {
       setStatus(`Read ${messages.length} of ${ids.length} emails. Gmail didn't send ${messages.failed.length}, so some flights may be missing. Tap the Gmail button to scan again.`, 'warn');
+    } else if (ids.truncated) {
+      setStatus(`Scanned the newest ${ids.length} matching emails, but there are more. Older bookings may be missing: raise "Max emails to scan" in Settings.`, 'warn');
     } else {
       setStatus(`Scanned ${messages.length} emails.`, 'ok');
     }
@@ -536,14 +538,15 @@ function init() {
       window.prompt('Copy this text:', text.slice(0, 2000));
     }
   });
-  $('#max-emails').value = store.get('maxEmails', '300');
+  if (store.get('maxEmails', '') === '300') store.set('maxEmails', String(DEFAULT_MAX_EMAILS)); // old default
+  $('#max-emails').value = store.get('maxEmails', String(DEFAULT_MAX_EMAILS));
   $('#agent-url').value = store.get('agentUrl', '') || DEFAULT_AGENT_URL;
   $('#origin').textContent = location.origin;
 
   $('#save-settings').addEventListener('click', () => {
     store.set('clientId', $('#client-id').value.trim());
     store.set('query', $('#query').value.trim() || DEFAULT_QUERY);
-    store.set('maxEmails', String(Math.max(10, Math.min(2000, Number($('#max-emails').value) || 300))));
+    store.set('maxEmails', String(Math.max(10, Math.min(2000, Number($('#max-emails').value) || DEFAULT_MAX_EMAILS))));
     store.set('agentUrl', $('#agent-url').value.trim() || DEFAULT_AGENT_URL);
     render();
     toggleSettings(false);

@@ -1,5 +1,5 @@
 // Google Calendar sync: turns a flight into a Calendar event and upserts/deletes it.
-import { AIRPORT_TZ } from './airports.js?v=202611031702';
+import { AIRPORT_TZ } from './airports.js?v=202611031713';
 
 const API = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
 

@@ -39,8 +39,8 @@ Google requires every app that reads Gmail to have its own OAuth client ID:
 
 ## Settings
 
-- **Gmail search query:** which emails get scanned. The default searches the last year for words like *flight*, *itinerary*, *e-ticket*, *PNR* and *booking reference*. You can narrow it (e.g. add `from:(indigo OR airindia OR emirates)`) or widen it (e.g. `newer_than:2y`).
-- **Max emails to scan:** defaults to 300.
+- **Gmail search query:** which emails get scanned. The default searches the last year for booking phrases (*PNR*, *booking ID*, *e-ticket*, *itinerary*, *booking confirmation*…) and travel sites (SmartBuy, Goibibo, MakeMyTrip, Cleartrip, Yatra, EaseMyTrip, ixigo). You can narrow it (e.g. add `from:(indigo OR airindia OR emirates)`) or widen it (e.g. `newer_than:2y`).
+- **Max emails to scan:** defaults to 600. If more emails match the search, the app says so, because older bookings would be left out.
 - **Check-in agent address:** where the check-in agent runs (default `http://localhost:8787`).
 - **Show past flights / Show cancelled:** toggles in the list.
 
