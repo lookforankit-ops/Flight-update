@@ -1,8 +1,8 @@
-import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText } from './parser.js?v=202611031634';
-import { DEFAULT_QUERY, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031634';
-import { sampleMessages } from './samples.js?v=202611031634';
-import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031634';
-import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031634';
+import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611031646';
+import { DEFAULT_QUERY, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031646';
+import { sampleMessages } from './samples.js?v=202611031646';
+import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031646';
+import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031646';
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
@@ -302,7 +302,7 @@ function renderSkipped() {
   box.querySelector('ul').innerHTML = skipped.map((m, i) => `
     <li>
       <div class="sk-subj">${escapeHtml(m.subject || '(no subject)')}</div>
-      <div class="sk-from">${escapeHtml(m.from)}</div>
+      <div class="sk-from">${escapeHtml(m.from)} · ${escapeHtml(m.why)}</div>
       <div class="row">
         ${m.id.startsWith('demo-') ? '' : `<a href="https://mail.google.com/mail/u/0/#all/${escapeHtml(m.id)}" target="_blank" rel="noopener">Open in Gmail</a>`}
         <button type="button" class="link" data-copy="${i}">Copy email text</button>
@@ -315,7 +315,11 @@ function processMessages(messages) {
   const flights = messages.flatMap((m) => {
     let found = [];
     try { found = extractFlights(m); } catch (e) { console.warn('Parse failed', m.id, e); }
-    if (!found.length) skipped.push({ id: m.id, subject: m.subject, from: m.from, body: (m.text && m.text.trim()) || htmlToText(m.html || '') });
+    if (!found.length) {
+      const body = (m.text && m.text.trim()) || htmlToText(m.html || '');
+      const why = classifyEmail({ subject: m.subject, body }).promo ? 'Looks like an advert' : 'No flight with a booking reference found';
+      skipped.push({ id: m.id, subject: m.subject, from: m.from, body, why });
+    }
     return found;
   });
   renderSkipped();

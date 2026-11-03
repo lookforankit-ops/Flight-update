@@ -145,7 +145,51 @@ test('a real booking that mentions its cancellation policy or an offer is still 
 test('classifyEmail', () => {
   assert.deepEqual(classifyEmail({ subject: 'Your flight has been cancelled' }), { promo: false, cancelled: true });
   assert.deepEqual(classifyEmail({ subject: 'Mega Sale: flights from ₹1,499' }), { promo: true, cancelled: false });
-  assert.deepEqual(classifyEmail({ subject: 'Your e-ticket', body: 'Your booking was successfully cancelled.' }), { promo: false, cancelled: true });
+  assert.deepEqual(classifyEmail({ subject: 'Update on your trip', body: 'Your booking was successfully cancelled.' }), { promo: false, cancelled: true });
+  assert.deepEqual(classifyEmail({ subject: 'Update on your trip', body: 'In case your flight is cancelled by the airline, the refund will be processed. Check your refund status online.' }), { promo: false, cancelled: false });
   assert.deepEqual(classifyEmail({ subject: 'Booking confirmation', body: 'Free cancellation within 24 hours. Refund policy applies.' }), { promo: false, cancelled: false });
   assert.deepEqual(classifyEmail({ subject: 'Your itinerary + exclusive offers inside' }), { promo: false, cancelled: false });
+});
+
+// Modelled on real emails that were wrongly dropped (wording reconstructed; personal details invented).
+const TNC = '\nCancellation & refund: In case your flight is cancelled by the airline, the refund will be processed to your card within 7 days. Check your refund status in My Trips. If the flight has been cancelled by the airline, no fee applies.\nFares starting from ₹4,999 on your next trip - Book now!';
+
+test('SmartBuy (via Goibibo) round trip is a booking, not cancelled or an advert', () => {
+  const flights = extractFlights({ id: 'sb', date: '2026-10-18', from: 'SmartBuy <noreply@smartbuy.example>',
+    subject: 'Your Flight Booking with SmartBuy is Successful - Order Reference Number 441179230855696467.',
+    text: `Dear Ankit,\nYour flight booking via GOIBIBO is Successful!\nBelow are the details of your confirmed flight.\nOnward Flight\nAir India AI-916\nDXB Dubai Thu, 19 Nov 2026 20:40\nDEL New Delhi Fri, 20 Nov 2026 01:50\nAirline PNR 8TQFN3\nReturn Flight\nAir India AI-995\nDEL New Delhi Sun, 22 Nov 2026 19:20\nDXB Dubai Sun, 22 Nov 2026 22:05\nAirline PNR 8TQFN3${TNC}` });
+  assert.deepEqual(flights.map((f) => [f.flightNumber, f.from, f.to, f.date, f.departureTime, f.cancelled, f.confirmation]), [
+    ['AI916', 'DXB', 'DEL', '2026-11-19', '20:40', false, '8TQFN3'],
+    ['AI995', 'DEL', 'DXB', '2026-11-22', '19:20', false, '8TQFN3'],
+  ]);
+});
+
+test('MakeMyTrip e-ticket round trip', () => {
+  const flights = extractFlights({ id: 'mmt', date: '2026-10-19', from: 'MakeMyTrip <noreply@makemytrip.example>',
+    subject: 'E-Ticket for Your Flight Booking ID: NN2AO61I96924638634',
+    html: `<table><tr><td>Booking ID</td><td>NN2AO61I96924638634</td></tr><tr><td>PNR</td><td>V56NMR</td></tr>
+      <tr><td>IndiGo</td><td>6E 1464</td></tr><tr><td>Dubai (DXB)</td><td>Tue, 01 Dec 2026, 21:25</td><td>Delhi (DEL)</td><td>Wed, 02 Dec 2026, 02:35</td></tr>
+      <tr><td>IndiGo</td><td>6E 1463</td></tr><tr><td>Delhi (DEL)</td><td>Sun, 06 Dec 2026, 17:35</td><td>Dubai (DXB)</td><td>Sun, 06 Dec 2026, 20:25</td></tr></table><p>${TNC}</p>` });
+  assert.deepEqual(flights.map((f) => [f.flightNumber, f.from, f.to, f.date, f.departureTime, f.cancelled, f.confirmation]), [
+    ['6E1464', 'DXB', 'DEL', '2026-12-01', '21:25', false, 'V56NMR'],
+    ['6E1463', 'DEL', 'DXB', '2026-12-06', '17:35', false, 'V56NMR'],
+  ]);
+});
+
+test('Etihad booking confirmation', () => {
+  const flights = extractFlights({ id: 'ey', date: '2026-10-14', from: 'Etihad Airways <noreply@etihad.example>',
+    subject: 'Your booking confirmation',
+    text: `Booking reference 9YR9VG\nDelhi (DEL) to Abu Dhabi (AUH)\nEY 0213\nWed 30 Dec 2026 16:20 - 18:50\nAbu Dhabi (AUH) to Delhi (DEL)\nEY 0212\nSat 09 Jan 2027 09:15 - 14:10${TNC}` });
+  assert.deepEqual(flights.map((f) => [f.flightNumber, f.from, f.to, f.date, f.departureTime, f.cancelled]), [
+    ['EY0213', 'DEL', 'AUH', '2026-12-30', '16:20', false],
+    ['EY0212', 'AUH', 'DEL', '2027-01-09', '09:15', false],
+  ]);
+});
+
+test('booking reference formats', () => {
+  assert.equal(findConfirmation('Booking Reference (PNR): QW8E2P'), 'QW8E2P');
+  assert.equal(findConfirmation('PNR/Booking Ref.: ZX4R9T'), 'ZX4R9T');
+  assert.equal(findConfirmation('Airline PNR \t 8TQFN3'), '8TQFN3');
+  assert.equal(findConfirmation('PNR Status: Confirmed\nPNR: K7XQ2M'), 'K7XQ2M');
+  assert.equal(findConfirmation('Confirmation email sent'), null);
 });

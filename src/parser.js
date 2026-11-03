@@ -27,7 +27,7 @@ const AIRLINES = {
   G9: 'Air Arabia', WY: 'Oman Air', GF: 'Gulf Air', SV: 'Saudia', KU: 'Kuwait Airways', NZ: 'Air New Zealand',
 };
 
-import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031634';
+import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031646';
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -275,12 +275,19 @@ function findAirports(text) {
   return codes.sort((a, b) => a.index - b.index);
 }
 
+const NOT_CODES = new Set(['STATUS', 'NUMBER', 'DETAILS', 'CONFIRMED', 'BOOKED', 'BOOKING', 'AIRLINE', 'TICKET', 'PENDING', 'ISSUED', 'ONWARD', 'RETURN', 'ADULT', 'EMAIL', 'MOBILE']);
+
+// Booking reference / PNR. Handles "PNR: ABC123", "Booking Reference (PNR): ABC123", "PNR/Booking Ref.: ABC123",
+// "Airline PNR \t ABC123", "Confirmation code is ABC123", and the code on the next line.
 export function findConfirmation(text) {
-  const re = /(?:PNR|booking\s*(?:reference|ref\.?|code|id|number)|confirmation\s*(?:code|number|no\.?|#)|record\s*locator|reservation\s*(?:code|number)|airline\s*ref(?:erence)?)\s*(?:no\.?|number|is|:|#|-)*\s*([A-Za-z0-9]{5,8})\b/gi;
+  const re = /(?:\bPNR\b|booking\s*(?:reference|ref\.?|code|id|number)|confirmation\s*(?:code|number|no\.?|#)?|record\s*locator|reservation\s*(?:code|number)|airline\s*ref(?:erence)?)(?:\s*(?:no\.?|number|is|pnr|ref\.?|reference|code|[:#\-–()\/|]))*\s*([A-Za-z0-9]{5,8})\b/gi;
   let m;
   while ((m = re.exec(text))) {
     const c = m[1];
-    if (c === c.toUpperCase() && /[A-Z]/.test(c)) return c;
+    const label = m[0].slice(0, m[0].length - c.length).toLowerCase();
+    const weak = /^\s*confirmation\s*[:#\-\s]*$/.test(label) && !/\d/.test(c); // "Confirmation email…"
+    if (c === c.toUpperCase() && /[A-Z]/.test(c) && !NOT_CODES.has(c) && !weak) return c;
+    re.lastIndex = m.index + 1; // the rejected word may itself start a label ("PNR/Booking Ref.: …")
   }
   return null;
 }
@@ -307,16 +314,29 @@ export function parseHeuristic(text, { refDate, subject = '' } = {}) {
     const prevEnd = i > 0 ? matches[i - 1].end : 0;
     const nextStart = i < matches.length - 1 ? matches[i + 1].index : text.length;
     // Details usually follow the flight number; look forward first, then backward if needed.
-    let windowText = text.slice(fm.index, Math.min(nextStart, fm.end + 450));
+    const fwdText = text.slice(fm.index, Math.min(nextStart, fm.end + 450));
+    let windowText = fwdText;
     const backText = text.slice(Math.max(prevEnd, fm.index - 160), fm.index);
 
+    const distinct = (list) => new Set(list.map((a) => a.code)).size;
     let airports = findAirports(windowText);
-    if (new Set(airports.map((a) => a.code)).size < 2) {
-      const back = findAirports(backText);
+    const back = findAirports(backText);
+    if (distinct(airports) >= 2 && distinct(back) >= 2) {
+      // A route on both sides: take the one nearer the flight number. (Some emails put the route line
+      // above the flight number, and then the next leg's route follows this leg's times.)
+      const backGap = backText.length - (back[back.length - 1].index + 3);
+      const fwdGap = airports[0].index - (fm.end - fm.index);
+      if (backGap < fwdGap) {
+        const last = back[back.length - 1];
+        const first = [...back].reverse().find((a) => a.code !== last.code);
+        airports = [first, last];
+      }
+    } else if (distinct(airports) < 2) {
       airports = [...back.slice(-2), ...airports];
       windowText = backText + windowText;
     }
-    let dates = findDates(windowText, refDate);
+    // Dates and times come from after the flight number when there are any there.
+    let dates = findDates(fwdText, refDate);
     if (dates.length === 0) dates = findDates(backText, refDate).slice(-1);
     if (airports.length < 2 || dates.length === 0) return;
 
@@ -324,7 +344,8 @@ export function parseHeuristic(text, { refDate, subject = '' } = {}) {
     const to = airports.find((a) => a.code !== from)?.code;
     if (!to) return;
 
-    const times = findTimes(windowText);
+    const fwdTimes = findTimes(fwdText);
+    const times = fwdTimes.length ? fwdTimes : findTimes(windowText);
     const flightNumber = normalizeFlightNumber(fm.code + fm.number);
     results.push({
       source: 'text',
@@ -361,18 +382,32 @@ export function parseHeuristic(text, { refDate, subject = '' } = {}) {
 // Marketing: sales, "seats filling fast", abandoned-search reminders...
 const PROMO_SUBJECT = /\b(hurry|seats? left|few seats|filling fast|last chance|flash sale|sale\b|deals?\b|offers?\b|fares? (?:from|starting)|lowest fares?|price (?:drop|alert)|don'?t miss|limited[- ]time|\d+\s?% off|discount|cashback|save (?:up to|big)|book now|complete your (?:booking|trip)|still (?:thinking|planning)|you searched|your (?:recent )?search|continue (?:your )?booking|left something|newsletter|exclusive|getaway|wanderlust|explore)\b/i;
 const PROMO_BODY = /\b(complete your booking|continue (?:your )?booking|you (?:recently )?searched|you were looking|seats? (?:are )?(?:filling|selling) fast|only \d+ seats? left|fares? starting (?:from|at)|book (?:your tickets? )?now before)\b/i;
-const BOOKING_SUBJECT = /\b(confirm(?:ed|ation)|e-?ticket|itinerary|booking (?:id|ref|reference|details)|pnr|boarding pass|check-?in|reservation|trip (?:id|details)|schedule change|flight (?:change|update))\b/i;
+const BOOKING_SUBJECT = /\b(confirm(?:ed|ation)|e-?ticket|itinerary|booking (?:id|ref|reference|details|is successful|successful)|(?:flight |trip )?booking\b[^.]{0,40}\bsuccessful(?:ly)?|successfully booked|order (?:reference|id|no)|pnr|boarding pass|check-?in|reservation|trip (?:id|details)|schedule change|flight (?:change|update))\b/i;
+// A subject that clearly says the booking went through overrides cancellation wording in the body.
+const CONFIRMED_SUBJECT = /\b(confirm(?:ed|ation)|successful(?:ly)?|e-?ticket|itinerary|booked)\b/i;
 
 // Cancellations and refunds. Body phrases are specific, because every ticket mentions its "cancellation policy".
 const CANCEL_SUBJECT = /\b(cancell?(?:ed|ation)|refund(?:ed)?)\b/i;
-const CANCEL_BODY = /\b(?:(?:booking|ticket|flight|pnr|reservation|itinerary|trip)s?\b[^.\n]{0,40}?\b(?:has|have|was|were|is|are|got)\s+(?:been\s+)?(?:successfully\s+|fully\s+)?cancell?ed|cancellation (?:is |has been )?(?:confirmed|successful|processed|completed)|refund (?:has been |was |is )?(?:processed|initiated|credited|completed|approved)|refund status)\b/i;
+// Only statements about *this* booking ("your booking has been cancelled", "refund has been processed"),
+// never terms-and-conditions text like "In case your flight is cancelled…" or "check your refund status".
+const CANCEL_BODY = /\b(?:your\s+(?:booking|ticket|e-?ticket|flight|pnr|reservation|itinerary|trip)s?\b[^.\n]{0,50}?\b(?:has|have|was|were)\s+(?:been\s+)?(?:successfully\s+|fully\s+)?cancell?ed|we have cancell?ed your|cancellation (?:of your [^.\n]{0,40})?(?:is |has been )?(?:confirmed|successful|processed|completed)|(?:your )?refund (?:of [^.\n]{0,30})?(?:has been|was) (?:processed|initiated|credited|completed|approved))\b/gi;
+const CONDITIONAL = /\b(?:if|in case|incase|should|when|whether|unless|in the event)\b/i;
+
+function bodySaysCancelled(body) {
+  CANCEL_BODY.lastIndex = 0;
+  let m;
+  while ((m = CANCEL_BODY.exec(body))) {
+    const start = Math.max(body.lastIndexOf('.', m.index), body.lastIndexOf('\n', m.index)) + 1;
+    if (!CONDITIONAL.test(body.slice(start, m.index + m[0].length))) return true;
+  }
+  return false;
+}
 
 /** @returns {{promo: boolean, cancelled: boolean}} */
 export function classifyEmail({ subject = '', body = '' }) {
-  const cancelled = CANCEL_SUBJECT.test(subject) || CANCEL_BODY.test(body);
-  const promo = !cancelled && (
-    (PROMO_SUBJECT.test(subject) && !BOOKING_SUBJECT.test(subject))
-    || (PROMO_BODY.test(body) && !findConfirmation(body))
+  const cancelled = CANCEL_SUBJECT.test(subject) || (!CONFIRMED_SUBJECT.test(subject) && bodySaysCancelled(body));
+  const promo = !cancelled && !BOOKING_SUBJECT.test(subject) && (
+    PROMO_SUBJECT.test(subject) || (PROMO_BODY.test(body) && !hasBookingEvidence(body))
   );
   return { promo, cancelled };
 }
@@ -400,7 +435,7 @@ export function extractFlights(message) {
     }
     // Flights read from free text only count when the email shows it's a real booking
     // (cancellation/refund emails are kept: they mark an existing booking as cancelled).
-    if (!kind.cancelled && !bodies.some(hasBookingEvidence)) flights = [];
+    if (!kind.cancelled && !BOOKING_SUBJECT.test(subject) && !bodies.some(hasBookingEvidence)) flights = [];
   }
   return flights
     .filter((f) => f.flightNumber && f.date && f.from && f.to)
