@@ -1,8 +1,8 @@
-import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611031713';
-import { DEFAULT_QUERY, DEFAULT_MAX_EMAILS, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031713';
-import { sampleMessages } from './samples.js?v=202611031713';
-import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031713';
-import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031713';
+import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611031731';
+import { DEFAULT_QUERY, DEFAULT_MAX_EMAILS, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031731';
+import { sampleMessages } from './samples.js?v=202611031731';
+import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031731';
+import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031731';
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';

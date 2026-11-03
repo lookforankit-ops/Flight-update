@@ -27,7 +27,7 @@ const AIRLINES = {
   G9: 'Air Arabia', WY: 'Oman Air', GF: 'Gulf Air', SV: 'Saudia', KU: 'Kuwait Airways', NZ: 'Air New Zealand',
 };
 
-import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031713';
+import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031731';
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -188,15 +188,32 @@ function inferYear(month, day, refDate) {
   return y;
 }
 
+const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+// "AUG 27, THU" has no year but a weekday: pick the nearby year (last, this, next) on which it falls.
+function yearFromWeekday(text, start, end, month, day, refDate) {
+  // The weekday right after the date ("AUG 27, THU"), or right before it ("Thu, 27 Aug").
+  const after = text.slice(end, end + 12).match(/^[\s,]*(sun|mon|tue|wed|thu|fri|sat)[a-z]*\b/i);
+  const before = text.slice(Math.max(0, start - 14), start).match(/\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\.?[\s,]*$/i);
+  const w = after || before;
+  if (!w) return null;
+  const base = inferYear(month, day, refDate);
+  const years = [base, base - 1, base + 1];
+  return years.find((y) => new Date(y, month - 1, day).getDay() === WEEKDAYS.indexOf(w[1].toLowerCase())) ?? null;
+}
+
 export function findDates(text, refDate) {
   const found = [];
   const MON = '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\.?';
   const patterns = [
     // 2026-11-20
     [/\b(20\d{2})-(\d{2})-(\d{2})\b/g, (m) => [+m[1], +m[2], +m[3]]],
-    // 20 Nov 2026 / 20th November, 2026 / 20-Nov-2026 / 20 Nov '26
-    [new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?[\\s-]*${MON}[\\s,-]*[’']?(20\\d{2}|\\d{2})\\b`, 'gi'),
-      (m) => [m[3].length === 2 ? 2000 + +m[3] : +m[3], monthNum(m[2]), +m[1]]],
+    // 20 Nov 2026 / 20th November, 2026 / 20-Nov-2026. (?<![:.\d]) keeps "19:30 Aug…" from reading 30 as a day.
+    [new RegExp(`(?<![:.\\d])\\b(\\d{1,2})(?:st|nd|rd|th)?[\\s-]*${MON}[\\s,-]*(20\\d{2})\\b`, 'gi'),
+      (m) => [+m[3], monthNum(m[2]), +m[1]]],
+    // Two-digit years only in unambiguous forms: 20 Nov'26, 20 Nov '26, 20-Nov-26 (never "30 AUG 27").
+    [new RegExp(`(?<![:.\\d])\\b(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*|-)${MON}(?:\\s*[’']|-)(\\d{2})\\b`, 'gi'),
+      (m) => [2000 + +m[3], monthNum(m[2]), +m[1]]],
     // Nov 20, 2026
     [new RegExp(`\\b${MON}\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(20\\d{2})\\b`, 'gi'), (m) => [+m[3], monthNum(m[1]), +m[2]]],
     // 20/11/2026, 20-11-2026, 20.11.26 (day first, as on Indian tickets; month first only when unambiguous)
@@ -206,16 +223,16 @@ export function findDates(text, refDate) {
       return [m[3].length === 2 ? 2000 + +m[3] : +m[3], b <= 12 ? b : null, a];
     }],
     // Fri, 20 Nov  (no year)
-    [new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MON}(?![\\s,-]*[’']?\\d)`, 'gi'), (m) => [null, monthNum(m[2]), +m[1]]],
+    [new RegExp(`(?<![:.\\d])\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MON}(?![\\s,-]*(?:[’']\\d|-\\d|20\\d{2}))`, 'gi'), (m) => [null, monthNum(m[2]), +m[1]]],
     // Nov 20 (no year)
-    [new RegExp(`\\b${MON}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?!,?\\s+\\d)`, 'gi'), (m) => [null, monthNum(m[1]), +m[2]]],
+    [new RegExp(`\\b${MON}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?![:.]\\d)(?!,?\\s+20\\d{2})`, 'gi'), (m) => [null, monthNum(m[1]), +m[2]]],
   ];
   for (const [re, fn] of patterns) {
     let m;
     while ((m = re.exec(text))) {
       let [y, mo, d] = fn(m);
       if (!mo || d < 1 || d > 31) continue;
-      if (y == null) y = inferYear(mo, d, refDate);
+      if (y == null) y = yearFromWeekday(text, m.index, m.index + m[0].length, mo, d, refDate) ?? inferYear(mo, d, refDate);
       found.push({ index: m.index, end: m.index + m[0].length, date: `${y}-${pad(mo)}-${pad(d)}` });
     }
   }
@@ -436,6 +453,9 @@ export function extractFlights(message) {
     // Flights read from free text only count when the email shows it's a real booking
     // (cancellation/refund emails are kept: they mark an existing booking as cancelled).
     if (!kind.cancelled && !BOOKING_SUBJECT.test(subject) && !bodies.some(hasBookingEvidence)) flights = [];
+    // Airlines sell at most about a year ahead: a later date means a misread year.
+    const sent = Date.parse(date);
+    if (sent) flights = flights.filter((f) => Date.parse(f.date) - sent < 365 * 864e5);
   }
   return flights
     .filter((f) => f.flightNumber && f.date && f.from && f.to)

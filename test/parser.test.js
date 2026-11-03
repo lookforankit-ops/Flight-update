@@ -204,3 +204,28 @@ test('SmartBuy via Goibibo e-ticket (real layout)', () => {
       [['AI916', 'DXB', 'DEL', '2026-12-24', '20:40', '2026-12-25', '01:50', 'Q7EV2M', false]]);
   }
 });
+
+// Real Air India check-in email (name removed): times and "AUG 27, THU" on separate lines.
+test('Air India check-in email: "19:30 / AUG 27, THU" is 27 Aug, not 30 Aug 2027', () => {
+  const html = ['Check-In', 'Confirmation', 'Dear Traveller,', "Your check-in is complete, and you're ready to fly.", 'AI 4310', 'DXB', 'Dubai', '4h', 'DEL', 'Delhi',
+    'Dubai International Airport', 'Terminal', '1', 'Indira Gandhi International Airport', 'Terminal', '3', '19:30', 'AUG 27, THU', '01:00', 'AUG 28, FRI',
+    'Please find your', 'boarding pass', 'attached.', 'Copyright © 2025 Air India Ltd. All rights reserved.'].map((l) => `<p>${l}</p>`).join('');
+  const [f] = extractFlights({ id: 'ai', subject: 'Your Air India Flight Check-In Confirmation', date: '2026-08-27T11:47:32.000Z', html });
+  assert.deepEqual([f.flightNumber, f.from, f.to, f.date, f.departureTime, f.arrivalDate, f.arrivalTime], ['AI4310', 'DXB', 'DEL', '2026-08-27', '19:30', '2026-08-28', '01:00']);
+  assert.equal(upcomingFlights([f], new Date('2026-11-03')).length, 0);
+});
+
+test('two-digit years only in clear forms; weekday picks the year', () => {
+  assert.deepEqual(findDates('19:30\nAUG 27, THU', '2026-08-27').map((d) => d.date), ['2026-08-27']);
+  assert.deepEqual(findDates("Thu, 19 Nov'26").map((d) => d.date), ['2026-11-19']);
+  assert.deepEqual(findDates('19-Nov-26').map((d) => d.date), ['2026-11-19']);
+  assert.ok(!findDates('19:30\nAUG 27', '2026-08-27').some((d) => d.date.endsWith('-08-30')));
+  assert.deepEqual(findDates('19:30\nAUG 27, THU\n01:00\nAUG 28, FRI', '2026-08-27').map((d) => d.date), ['2026-08-27', '2026-08-28']);
+  // Email sent in Dec 2026 about "Fri, 8 Jan": 8 Jan 2027 is a Friday.
+  assert.deepEqual(findDates('Fri, 8 Jan', '2026-12-20').map((d) => d.date), ['2027-01-08']);
+});
+
+test('text-read flights more than a year after the email are dropped as misread', () => {
+  assert.deepEqual(extractFlights({ id: 'z', subject: 'Booking confirmation', date: '2026-08-27', text: 'PNR: ZX4R9T\nAI 101 DEL - BOM 30 Aug 2027 10:00' }), []);
+  assert.equal(extractFlights({ id: 'z2', subject: 'Booking confirmation', date: '2026-08-27', text: 'PNR: ZX4R9T\nAI 101 DEL - BOM 30 Jul 2027 10:00' }).length, 1);
+});
