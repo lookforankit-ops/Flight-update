@@ -10,15 +10,35 @@ export const OLD_DEFAULT_QUERIES = [
   'newer_than:1y -in:spam {flight flights itinerary e-ticket eticket "boarding pass" PNR "booking reference" "confirmation code" "record locator"}',
 ];
 
-async function api(token, path) {
-  const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Gmail answers bursts of requests with 429 / 403 "rate limit exceeded" (and sometimes 5xx).
+// Those are temporary: wait and retry instead of losing the email.
+function isRetryable(status, body) {
+  return status === 429 || status >= 500 || (status === 403 && /rate ?limit|quota|backend/i.test(body));
+}
+
+async function api(token, path, attempts = 6) {
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try {
+      res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+    } catch (netErr) {
+      if (attempt + 1 >= attempts) throw netErr; // offline / connection dropped
+      await sleep(500 * 2 ** attempt);
+      continue;
+    }
+    if (res.ok) return res.json();
     const body = await res.text();
+    if (isRetryable(res.status, body) && attempt + 1 < attempts) {
+      const retryAfter = Number(res.headers.get('Retry-After'));
+      await sleep(retryAfter > 0 ? retryAfter * 1000 : 400 * 2 ** attempt + Math.random() * 300);
+      continue;
+    }
     const err = new Error(`Gmail API ${res.status}: ${body.slice(0, 300)}`);
     err.status = res.status;
     throw err;
   }
-  return res.json();
 }
 
 export async function listMessageIds(token, query, max = 300) {
@@ -68,22 +88,33 @@ export async function getMessage(token, id) {
 }
 
 // Fetch many messages with limited concurrency, reporting progress.
-export async function getMessages(token, ids, onProgress, concurrency = 6) {
+// Fetch many messages with limited concurrency, reporting progress. Emails that still fail after
+// retries get one more, slower pass; anything left is reported in `failed` so the app can say so.
+export async function getMessages(token, ids, onProgress, concurrency = 4) {
   const results = new Array(ids.length);
-  let next = 0;
   let done = 0;
-  async function worker() {
-    while (next < ids.length) {
-      const i = next++;
-      try {
-        results[i] = await getMessage(token, ids[i]);
-      } catch (e) {
-        if (e.status === 401) throw e;
-        results[i] = null;
+  async function run(indexes, workers) {
+    let next = 0;
+    async function worker() {
+      while (next < indexes.length) {
+        const i = indexes[next++];
+        try {
+          results[i] = await getMessage(token, ids[i]);
+        } catch (e) {
+          if (e.status === 401) throw e;
+          results[i] = null;
+        }
+        if (workers > 1) onProgress?.(++done, ids.length);
       }
-      onProgress?.(++done, ids.length);
     }
+    await Promise.all(Array.from({ length: Math.min(workers, indexes.length) }, worker));
   }
-  await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker));
-  return results.filter(Boolean);
+  await run(ids.map((_, i) => i), concurrency);
+  const retry = ids.map((_, i) => i).filter((i) => !results[i]);
+  if (retry.length) {
+    await sleep(1500);
+    await run(retry, 1);
+  }
+  const failed = ids.filter((_, i) => !results[i]);
+  return Object.assign(results.filter(Boolean), { failed });
 }

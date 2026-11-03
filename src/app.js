@@ -1,8 +1,8 @@
-import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611031659';
-import { DEFAULT_QUERY, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031659';
-import { sampleMessages } from './samples.js?v=202611031659';
-import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031659';
-import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031659';
+import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611031702';
+import { DEFAULT_QUERY, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031702';
+import { sampleMessages } from './samples.js?v=202611031702';
+import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031702';
+import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031702';
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
@@ -45,8 +45,10 @@ function saveSynced(map) { store.set('calendarSynced', JSON.stringify(map)); }
 // What, if anything, needs to happen in Google Calendar for this flight.
 // Calendar events this app created for upcoming flights that the latest scan no longer finds
 // (e.g. an advert or refund email was read as a booking before). Only after a real Gmail scan.
+let lastScanPartial = false; // some emails couldn't be fetched: don't treat missing flights as gone
+
 function orphanEvents(map = synced()) {
-  if (!allFlights.length || allFlights.every(isDemo)) return [];
+  if (lastScanPartial || !allFlights.length || allFlights.every(isDemo)) return [];
   const known = new Set(allFlights.map(flightKey));
   return Object.keys(map).filter((key) => !known.has(key) && daysUntil(key.split('|')[1] || '') >= 0);
 }
@@ -337,6 +339,7 @@ function shareableText(m) {
 }
 
 function processMessages(messages) {
+  lastScanPartial = !!messages.failed?.length;
   scanned = [];
   const flights = messages.flatMap((m) => {
     let found = [];
@@ -374,7 +377,11 @@ async function scan() {
     }
     const messages = await getMessages(accessToken, ids, (done, total) => setStatus(`Reading emails… ${done}/${total}`));
     processMessages(messages);
-    setStatus(`Scanned ${messages.length} emails.`, 'ok');
+    if (messages.failed?.length) {
+      setStatus(`Read ${messages.length} of ${ids.length} emails. Gmail didn't send ${messages.failed.length}, so some flights may be missing. Tap the Gmail button to scan again.`, 'warn');
+    } else {
+      setStatus(`Scanned ${messages.length} emails.`, 'ok');
+    }
   } catch (e) {
     console.error(e);
     if (e.status === 401) {
