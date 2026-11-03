@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Flight Update</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1c1c1e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>My Flights</title>
   <meta name="description" content="Lists your upcoming flights from booking emails in Gmail.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
   <link rel="stylesheet" href="styles.css">
@@ -13,17 +16,27 @@
 <body>
   <main>
     <header class="top">
-      <div>
-        <h1>✈ Flight Update</h1>
-        <p class="sub">Your upcoming flights, read from your booking emails in Gmail.</p>
-      </div>
-      <div class="actions">
-        <button id="signin" class="primary">Sign in with Google</button>
-        <button id="scan" class="primary" hidden>Rescan Gmail</button>
-        <button id="signout" hidden>Sign out</button>
-        <button id="demo">Try demo</button>
+      <h1>My Flights</h1>
+      <div class="round-buttons">
+        <button id="scan" class="round" title="Rescan Gmail" aria-label="Rescan Gmail" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>
+        </button>
+        <button id="settings-btn" class="round" title="Settings" aria-label="Settings" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+        </button>
+        <button id="account" class="round avatar" title="Sign in with Google" aria-label="Sign in with Google">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M4.5 20.5c1.6-3.6 4.4-5 7.5-5s5.9 1.4 7.5 5"/></svg>
+        </button>
       </div>
     </header>
+
+    <section id="welcome" class="welcome" hidden>
+      <p>See every upcoming flight from your booking emails in Gmail.</p>
+      <div class="row">
+        <button id="signin" class="primary">Sign in with Google</button>
+        <button id="demo">Try demo</button>
+      </div>
+    </section>
 
     <details id="settings">
       <summary>Settings</summary>
@@ -45,22 +58,24 @@
         <div class="row">
           <button id="save-settings" class="primary">Save</button>
           <button id="reset-query" type="button">Reset query</button>
+          <button id="demo-2" type="button">Load demo flights</button>
+          <button id="signout" type="button" class="danger" hidden>Sign out</button>
         </div>
       </div>
     </details>
 
     <div id="status" class="status" role="status" hidden></div>
 
-    <div class="toolbar">
+    <div class="toolbar" id="toolbar" hidden>
+      <label class="pill"><input type="checkbox" id="show-past"><span>Past</span></label>
+      <label class="pill"><input type="checkbox" id="show-cancelled"><span>Cancelled</span></label>
+      <button id="cal-all" class="pill accent" hidden></button>
       <span id="summary"></span>
-      <button id="cal-all" class="primary" hidden></button>
-      <label><input type="checkbox" id="show-past"> Show past flights</label>
-      <label><input type="checkbox" id="show-cancelled"> Show cancelled</label>
     </div>
 
-    <section id="flights" aria-live="polite"></section>
+    <section id="flights" class="list" aria-live="polite"></section>
 
-    <p class="privacy">🔒 Runs entirely in your browser with read-only Gmail access. Your emails are never sent to any server other than Google's. Calendar access is only requested when you add a flight.</p>
+    <p class="privacy">Runs entirely in your browser with read-only Gmail access. Your emails are never sent to any server other than Google's. Tap a flight for booking details, calendar and check-in.</p>
   </main>
   <script type="module" src="src/app.js"></script>
 </body>

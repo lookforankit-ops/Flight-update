@@ -30,3 +30,36 @@ const ZONES = {
 
 export const AIRPORT_TZ = {};
 for (const [tz, codes] of Object.entries(ZONES)) codes.split(' ').forEach((c) => { AIRPORT_TZ[c] = tz; });
+
+// City names for display ("Dubai to Delhi").
+export const CITIES = {
+  DEL: 'Delhi', BOM: 'Mumbai', BLR: 'Bengaluru', MAA: 'Chennai', HYD: 'Hyderabad', CCU: 'Kolkata', COK: 'Kochi',
+  AMD: 'Ahmedabad', PNQ: 'Pune', GOI: 'Goa', GOX: 'Goa', TRV: 'Thiruvananthapuram', IXC: 'Chandigarh', JAI: 'Jaipur',
+  LKO: 'Lucknow', PAT: 'Patna', GAU: 'Guwahati', BBI: 'Bhubaneswar', IXB: 'Bagdogra', SXR: 'Srinagar', VNS: 'Varanasi',
+  IDR: 'Indore', NAG: 'Nagpur', CJB: 'Coimbatore', IXM: 'Madurai', IXE: 'Mangaluru', TRZ: 'Tiruchirappalli',
+  VTZ: 'Visakhapatnam', RPR: 'Raipur', IXR: 'Ranchi', BDQ: 'Vadodara', ATQ: 'Amritsar', DED: 'Dehradun', IXJ: 'Jammu',
+  UDR: 'Udaipur', JDH: 'Jodhpur', IXA: 'Agartala', IXZ: 'Port Blair', VGA: 'Vijayawada', TIR: 'Tirupati', CCJ: 'Kozhikode',
+  IXL: 'Leh', HBX: 'Hubballi', STV: 'Surat', RAJ: 'Rajkot', BHO: 'Bhopal', GWL: 'Gwalior', DIB: 'Dibrugarh', JRH: 'Jorhat',
+  IMF: 'Imphal', AJL: 'Aizawl', IXS: 'Silchar', AGR: 'Agra', NMI: 'Navi Mumbai', HSR: 'Rajkot',
+  DXB: 'Dubai', DWC: 'Dubai', AUH: 'Abu Dhabi', SHJ: 'Sharjah', RKT: 'Ras Al Khaimah', DOH: 'Doha', BAH: 'Bahrain',
+  MCT: 'Muscat', KWI: 'Kuwait', RUH: 'Riyadh', JED: 'Jeddah', DMM: 'Dammam', MED: 'Madinah',
+  SIN: 'Singapore', KUL: 'Kuala Lumpur', PEN: 'Penang', BKK: 'Bangkok', DMK: 'Bangkok', HKT: 'Phuket', CNX: 'Chiang Mai',
+  SGN: 'Ho Chi Minh City', HAN: 'Hanoi', DAD: 'Da Nang', CGK: 'Jakarta', DPS: 'Bali', MNL: 'Manila', HKG: 'Hong Kong',
+  PEK: 'Beijing', PKX: 'Beijing', PVG: 'Shanghai', SHA: 'Shanghai', CAN: 'Guangzhou', SZX: 'Shenzhen', CTU: 'Chengdu',
+  TPE: 'Taipei', ICN: 'Seoul', GMP: 'Seoul', NRT: 'Tokyo', HND: 'Tokyo', KIX: 'Osaka', KTM: 'Kathmandu', CMB: 'Colombo',
+  DAC: 'Dhaka', MLE: 'Malé', KHI: 'Karachi', LHE: 'Lahore', ISB: 'Islamabad', PBH: 'Paro',
+  LHR: 'London', LGW: 'London', STN: 'London', LTN: 'London', LCY: 'London', MAN: 'Manchester', EDI: 'Edinburgh',
+  BHX: 'Birmingham', GLA: 'Glasgow', DUB: 'Dublin', CDG: 'Paris', ORY: 'Paris', NCE: 'Nice', AMS: 'Amsterdam',
+  FRA: 'Frankfurt', MUC: 'Munich', BER: 'Berlin', DUS: 'Düsseldorf', HAM: 'Hamburg', ZRH: 'Zurich', GVA: 'Geneva',
+  VIE: 'Vienna', FCO: 'Rome', MXP: 'Milan', MAD: 'Madrid', BCN: 'Barcelona', LIS: 'Lisbon', BRU: 'Brussels',
+  CPH: 'Copenhagen', ARN: 'Stockholm', OSL: 'Oslo', HEL: 'Helsinki', IST: 'Istanbul', SAW: 'Istanbul', ATH: 'Athens',
+  PRG: 'Prague', WAW: 'Warsaw', SVO: 'Moscow', DME: 'Moscow', CAI: 'Cairo', JNB: 'Johannesburg', CPT: 'Cape Town',
+  NBO: 'Nairobi', ADD: 'Addis Ababa', LOS: 'Lagos',
+  JFK: 'New York', EWR: 'Newark', LGA: 'New York', BOS: 'Boston', IAD: 'Washington', DCA: 'Washington', ATL: 'Atlanta',
+  MIA: 'Miami', MCO: 'Orlando', PHL: 'Philadelphia', CLT: 'Charlotte', DTW: 'Detroit', FLL: 'Fort Lauderdale',
+  YYZ: 'Toronto', YUL: 'Montreal', YOW: 'Ottawa', ORD: 'Chicago', MDW: 'Chicago', DFW: 'Dallas', IAH: 'Houston',
+  MSP: 'Minneapolis', AUS: 'Austin', DEN: 'Denver', SLC: 'Salt Lake City', PHX: 'Phoenix', LAX: 'Los Angeles',
+  SFO: 'San Francisco', SEA: 'Seattle', SAN: 'San Diego', SJC: 'San Jose', LAS: 'Las Vegas', PDX: 'Portland',
+  OAK: 'Oakland', YVR: 'Vancouver', MEX: 'Mexico City', GRU: 'São Paulo', BOG: 'Bogotá', EZE: 'Buenos Aires',
+  HNL: 'Honolulu', SYD: 'Sydney', MEL: 'Melbourne', BNE: 'Brisbane', PER: 'Perth', AKL: 'Auckland',
+};

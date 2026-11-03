@@ -10,6 +10,14 @@ const daysFromNow = (n) => {
   return d;
 };
 
+// ISO timestamp for a UTC moment, written in a given UTC offset (e.g. +4 for Dubai).
+const isoAt = (ms, offsetHours) => {
+  const local = new Date(ms + offsetHours * 3600000).toISOString().slice(0, 19);
+  const sign = offsetHours >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetHours);
+  return `${local}${sign}${pad(Math.floor(abs))}:${pad(Math.round((abs % 1) * 60))}`;
+};
+
 export function sampleMessages() {
   const a = daysFromNow(9);
   const b = daysFromNow(16);
@@ -35,7 +43,33 @@ export function sampleMessages() {
     },
   };
 
+  // A flight leaving in a few hours, to show the hours/minutes countdown.
+  const soonDep = Date.now() + (3 * 60 + 8) * 60000;
+  const soon = {
+    '@context': 'http://schema.org',
+    '@type': 'FlightReservation',
+    reservationNumber: 'P9LM3K',
+    underName: { '@type': 'Person', name: 'Alex Traveler' },
+    airplaneSeat: '31K',
+    reservationFor: {
+      '@type': 'Flight',
+      flightNumber: '512',
+      airline: { '@type': 'Airline', name: 'Emirates', iataCode: 'EK' },
+      departureAirport: { '@type': 'Airport', name: 'Dubai International', iataCode: 'DXB' },
+      departureTime: isoAt(soonDep, 4),
+      arrivalAirport: { '@type': 'Airport', name: 'Indira Gandhi International', iataCode: 'DEL' },
+      arrivalTime: isoAt(soonDep + 187 * 60000, 5.5),
+    },
+  };
+
   return [
+    {
+      id: 'demo-0',
+      from: 'Emirates <do-not-reply@emirates.email>',
+      subject: 'Your boarding pass is ready: EK 512',
+      date: sent,
+      html: `<script type="application/ld+json">${JSON.stringify(soon)}</script><p>Check-in is open.</p>`,
+    },
     {
       id: 'demo-1',
       from: 'IndiGo <reservations@goindigo.in>',

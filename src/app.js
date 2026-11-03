@@ -1,7 +1,8 @@
 import { extractFlights, mergeFlights, upcomingFlights, AIRLINES } from './parser.js';
 import { DEFAULT_QUERY, listMessageIds, getMessages } from './gmail.js';
 import { sampleMessages } from './samples.js';
-import { buildEvent, eventHash, upsertEvent, deleteEvent } from './calendar.js';
+import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js';
+import { AIRPORT_TZ, CITIES } from './airports.js';
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
@@ -16,6 +17,7 @@ let allFlights = [];
 let accessToken = null;
 let calendarToken = null; // { token, expires }
 let calendarBusy = false;
+const openKeys = new Set(); // flights whose details are expanded
 
 function clientId() {
   return store.get('clientId', '') || window.FLIGHT_UPDATE_CONFIG?.googleClientId || '';
@@ -87,19 +89,75 @@ function daysUntil(dateStr) {
   return Math.round((target - today) / 86400000);
 }
 
-function relative(days) {
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Tomorrow';
-  if (days < 0) return `${-days} days ago`;
-  if (days < 14) return `In ${days} days`;
-  if (days < 60) return `In ${Math.round(days / 7)} weeks`;
-  return `In ${Math.round(days / 30)} months`;
+function formatDate(dateStr, opts = { weekday: 'short', day: 'numeric', month: 'short' }) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  if (y !== new Date().getFullYear()) opts = { ...opts, year: 'numeric' };
+  return date.toLocaleDateString(undefined, opts);
 }
 
-function formatDate(dateStr) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+function formatClock(hhmm) {
+  if (!hhmm) return '--:--';
+  const [h, m] = hhmm.split(':').map(Number);
+  return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
+
+// Departure moment in UTC ms (null if no time is known).
+function departureMs(f) {
+  if (f.departureIso && /(Z|[+-]\d{2}:?\d{2})$/.test(f.departureIso)) return Date.parse(f.departureIso);
+  if (!f.departureTime) return null;
+  const tz = AIRPORT_TZ[f.from];
+  if (tz) return zonedToUtc(f.date, f.departureTime, tz);
+  const [y, m, d] = f.date.split('-').map(Number);
+  const [h, mi] = f.departureTime.split(':').map(Number);
+  return new Date(y, m - 1, d, h, mi).getTime();
+}
+
+// Big number + caption on the left of each row ("7 / DAYS", "3h / 8 MINUTES").
+function countdown(f) {
+  if (f.cancelled) return { big: '–', unit: 'Cancelled' };
+  const dep = departureMs(f);
+  const days = daysUntil(f.date);
+  if (dep != null) {
+    const mins = Math.round((dep - Date.now()) / 60000);
+    if (mins < 0 && mins > -24 * 60) return { big: `${Math.floor(-mins / 60) || -mins}${-mins >= 60 ? 'h' : ''}`, unit: -mins >= 60 ? 'ago' : 'min ago', word: false };
+    if (mins >= 0 && mins < 60) return { big: String(mins), unit: mins === 1 ? 'Minute' : 'Minutes', soon: true };
+    if (mins >= 60 && mins < 24 * 60) {
+      const m = mins % 60;
+      return { big: `${Math.floor(mins / 60)}h`, unit: `<b>${m}</b> ${m === 1 ? 'Minute' : 'Minutes'}`, soon: true };
+    }
+  }
+  if (days === 0) return { big: 'Today', unit: '', word: true, soon: true };
+  if (days < 0) return { big: String(-days), unit: -days === 1 ? 'Day ago' : 'Days ago' };
+  return { big: String(days), unit: days === 1 ? 'Day' : 'Days' };
+}
+
+function rightLabel(f, cd) {
+  if (f.cancelled) return { text: 'Cancelled', cls: 'bad' };
+  const days = daysUntil(f.date);
+  if (cd.soon && f.departureTime) return { text: `Departs ${days === 0 ? 'today' : 'tomorrow'}`, cls: 'soon' };
+  if (days < 0) return { text: formatDate(f.date), cls: 'done' };
+  return { text: formatDate(f.date), cls: '' };
+}
+
+function cityOf(code, name) {
+  return CITIES[code] || (name ? name.split(/\s+(?:International|Intl|Airport|Chhatrapati|Indira|Kempegowda)\b/)[0] : code);
+}
+
+function airlineHue(code) {
+  let h = 0;
+  for (const c of code) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return h;
+}
+
+function arrivalDayOffset(f) {
+  if (f.arrivalDate && f.arrivalDate !== f.date) return Math.round((Date.parse(f.arrivalDate) - Date.parse(f.date)) / 86400000);
+  if (!f.arrivalDate && f.arrivalTime && f.departureTime && f.arrivalTime < f.departureTime) return 1;
+  return 0;
+}
+
+const ICON_DEP = '<svg viewBox="0 0 12 12"><path d="M3.5 8.5l5-5M4.5 3.5h4v4"/></svg>';
+const ICON_ARR = '<svg viewBox="0 0 12 12"><path d="M3.5 3.5l5 5M8.5 4.5v4h-4"/></svg>';
 
 function gmailLink(id) {
   return id.startsWith('demo-') ? null : `https://mail.google.com/mail/u/0/#all/${id}`;
@@ -109,7 +167,7 @@ function render() {
   const showPast = $('#show-past').checked;
   const showCancelled = $('#show-cancelled').checked;
   let list = showPast
-    ? [...allFlights].sort((a, b) => `${a.date}${a.departureTime}`.localeCompare(`${b.date}${b.departureTime}`))
+    ? [...allFlights].filter((f) => daysUntil(f.date) < 0).sort((a, b) => `${b.date}${b.departureTime}`.localeCompare(`${a.date}${a.departureTime}`))
     : upcomingFlights(allFlights, new Date(), { includeCancelled: true });
   if (!showCancelled) list = list.filter((f) => !f.cancelled);
 
@@ -118,60 +176,64 @@ function render() {
   const pending = allFlights.filter((f) => ['add', 'update', 'remove'].includes(calendarState(f, map)));
   $('#cal-all').hidden = pending.length === 0;
   $('#cal-all').disabled = calendarBusy;
-  $('#cal-all').textContent = `📅 Sync ${pending.length} flight${pending.length === 1 ? '' : 's'} to Google Calendar`;
+  $('#cal-all').textContent = `Sync ${pending.length} to Calendar`;
+  $('#toolbar').hidden = allFlights.length === 0;
+  $('#welcome').hidden = allFlights.length > 0 || !!accessToken;
 
   const upcomingCount = upcomingFlights(allFlights).length;
-  $('#summary').textContent = allFlights.length
-    ? `${upcomingCount} upcoming flight${upcomingCount === 1 ? '' : 's'} · ${allFlights.length} found in total`
-    : '';
+  $('#summary').textContent = allFlights.length ? `${upcomingCount} upcoming` : '';
 
   if (!list.length) {
     container.innerHTML = allFlights.length
-      ? '<p class="empty">No upcoming flights found. Toggle “Show past flights” to see older trips.</p>'
+      ? `<p class="empty">${showPast ? 'No past flights found.' : 'No upcoming flights. Tap “Past” to see earlier trips.'}</p>`
       : '';
     return;
   }
 
   container.innerHTML = list.map((f) => {
-    const days = daysUntil(f.date);
-    const airline = f.airline || AIRLINES[f.flightNumber.slice(0, 2)] || '';
+    const key = flightKey(f);
+    const cd = countdown(f);
+    const label = rightLabel(f, cd);
+    const code = f.flightNumber.slice(0, 2);
+    const airline = f.airline || AIRLINES[code] || '';
     const email = f.emails[f.emails.length - 1];
     const link = gmailLink(email.id);
-    const arrivalNote = f.arrivalDate && f.arrivalDate !== f.date ? ` <span class="plus">+${daysUntil(f.arrivalDate) - days}</span>` : '';
+    const plus = arrivalDayOffset(f);
+    const fromCity = cityOf(f.from, f.fromName);
+    const toCity = cityOf(f.to, f.toName);
+    const fact = (k, v) => (v ? `<div class="fact"><div class="k">${k}</div><div class="v" title="${escapeHtml(v)}">${escapeHtml(v)}</div></div>` : '');
+    const classes = ['flight', f.cancelled && 'cancelled', daysUntil(f.date) < 0 && 'past', cd.soon && !f.cancelled && 'soon', openKeys.has(key) && 'open'].filter(Boolean).join(' ');
     return `
-      <article class="card ${f.cancelled ? 'cancelled' : ''} ${days < 0 ? 'past' : ''}">
-        <header>
-          <div>
-            <div class="date">${escapeHtml(formatDate(f.date))}</div>
-            <div class="when">${f.cancelled ? 'Cancelled' : relative(days)}</div>
+      <article class="${classes}" data-key="${escapeHtml(key)}" tabindex="0" aria-expanded="${openKeys.has(key)}"
+        aria-label="${escapeHtml(`${f.flightNumber}, ${fromCity} to ${toCity}, ${formatDate(f.date)}`)}">
+        <div class="count"><div class="big${cd.word ? ' word' : ''}">${escapeHtml(cd.big)}</div><div class="unit">${cd.unit}</div></div>
+        <div class="body">
+          <div class="meta">
+            <span class="badge" style="--h:${airlineHue(code)}" title="${escapeHtml(airline)}">${escapeHtml(code)}</span>
+            <span class="fno">${escapeHtml(`${code} ${f.flightNumber.slice(2)}`)}</span>
+            <span class="when ${label.cls}">${escapeHtml(label.text)}</span>
           </div>
-          <div class="flightno">
-            <strong>${escapeHtml(f.flightNumber)}</strong>
-            <span>${escapeHtml(airline)}</span>
+          <div class="cities"><b>${escapeHtml(fromCity)}</b> <span class="to">to</span> <b>${escapeHtml(toCity)}</b></div>
+          <div class="times">
+            <span class="t"><i class="ic" aria-label="Departs">${ICON_DEP}</i><span class="code">${escapeHtml(f.from)}</span><span class="clock">${escapeHtml(formatClock(f.departureTime))}</span></span>
+            <span class="t"><i class="ic" aria-label="Arrives">${ICON_ARR}</i><span class="code">${escapeHtml(f.to)}</span><span class="clock">${escapeHtml(formatClock(f.arrivalTime))}</span>${plus ? `<sup>+${plus}</sup>` : ''}</span>
           </div>
-        </header>
-        <div class="route">
-          <div class="end">
-            <div class="code">${escapeHtml(f.from)}</div>
-            <div class="time">${escapeHtml(f.departureTime || '--:--')}</div>
-            <div class="name">${escapeHtml(f.fromName || '')}</div>
-          </div>
-          <div class="line" aria-hidden="true"><span>✈</span></div>
-          <div class="end right">
-            <div class="code">${escapeHtml(f.to)}</div>
-            <div class="time">${escapeHtml(f.arrivalTime || '--:--')}${arrivalNote}</div>
-            <div class="name">${escapeHtml(f.toName || '')}</div>
+          <div class="details">
+            <div class="facts">
+              ${fact('Airline', airline)}
+              ${fact('Booking ref', f.confirmation)}
+              ${fact('Passenger', f.passenger)}
+              ${fact('Seat', f.seat)}
+              ${fact('Date', formatDate(f.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }))}
+            </div>
+            <div class="actions">
+              ${calendarControl(f, map)}
+              ${checkinLink(f)}
+            </div>
+            <div class="src">✉️ ${link ? `<a href="${link}" target="_blank" rel="noopener">` : ''}${escapeHtml(email.subject || '(no subject)')}${link ? '</a>' : ''}</div>
+            ${f.source === 'text' ? '<div class="note">Read from the email text rather than structured booking data, so double-check the details.</div>' : ''}
           </div>
         </div>
-        <footer>
-          ${f.confirmation ? `<span class="chip">Ref <b>${escapeHtml(f.confirmation)}</b></span>` : ''}
-          ${f.passenger ? `<span class="chip">${escapeHtml(f.passenger)}</span>` : ''}
-          ${f.seat ? `<span class="chip">Seat ${escapeHtml(f.seat)}</span>` : ''}
-          ${calendarControl(f, map)}
-          ${checkinLink(f)}
-          ${f.source === 'text' ? '<span class="chip muted" title="Read from the email text rather than structured booking data, so double-check the details.">Read from email text</span>' : ''}
-          <span class="src">${link ? `<a href="${link}" target="_blank" rel="noopener">` : ''}${escapeHtml(email.subject || '(no subject)')}${link ? '</a>' : ''}</span>
-        </footer>
       </article>`;
   }).join('');
 }
@@ -215,16 +277,25 @@ async function scan() {
 }
 
 function updateAuthUi() {
-  $('#signin').hidden = !!accessToken;
   $('#scan').hidden = !accessToken;
   $('#signout').hidden = !accessToken;
+  const acct = $('#account');
+  acct.classList.toggle('signed-in', !!accessToken);
+  acct.title = accessToken ? 'Signed in (open settings to sign out)' : 'Sign in with Google';
+  acct.setAttribute('aria-label', acct.title);
+  $('#welcome').hidden = allFlights.length > 0 || !!accessToken;
+}
+
+function toggleSettings(open = !$('#settings').open) {
+  $('#settings').open = open;
+  $('#settings-btn').setAttribute('aria-expanded', String(open));
 }
 
 // Ask Google for an access token with the given scope. Must be called from a click handler (opens a popup).
 function requestToken(scope) {
   return new Promise((resolve, reject) => {
     if (!clientId()) {
-      $('#settings').open = true;
+      toggleSettings(true);
       $('#client-id').focus();
       return reject(new Error('First add your Google OAuth client ID in Settings (see the README for the 5-minute setup).'));
     }
@@ -327,13 +398,16 @@ function init() {
     store.set('maxEmails', String(Math.max(10, Math.min(2000, Number($('#max-emails').value) || 300))));
     store.set('agentUrl', $('#agent-url').value.trim() || DEFAULT_AGENT_URL);
     render();
-    $('#settings').open = false;
+    toggleSettings(false);
     setStatus('Settings saved.', 'ok');
   });
   $('#reset-query').addEventListener('click', () => { $('#query').value = DEFAULT_QUERY; });
   $('#signin').addEventListener('click', signIn);
   $('#signout').addEventListener('click', signOut);
   $('#scan').addEventListener('click', scan);
+  $('#account').addEventListener('click', () => (accessToken ? toggleSettings(true) : signIn()));
+  $('#settings-btn').addEventListener('click', () => toggleSettings());
+  $('#demo-2').addEventListener('click', () => { toggleSettings(false); $('#demo').click(); });
   $('#demo').addEventListener('click', () => {
     processMessages(sampleMessages());
     setStatus('Showing demo data. Sign in with Google to see your real flights.', 'ok');
@@ -342,9 +416,23 @@ function init() {
     const map = synced();
     syncToCalendar(allFlights.filter((f) => ['add', 'update', 'remove'].includes(calendarState(f, map))));
   });
+  const toggleRow = (row) => {
+    const key = row.dataset.key;
+    if (openKeys.has(key)) openKeys.delete(key); else openKeys.add(key);
+    row.classList.toggle('open', openKeys.has(key));
+    row.setAttribute('aria-expanded', String(openKeys.has(key)));
+  };
+  $('#flights').addEventListener('keydown', (ev) => {
+    const row = ev.target.closest?.('article.flight');
+    if (row && ev.target === row && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); toggleRow(row); }
+  });
   $('#flights').addEventListener('click', (ev) => {
     const btn = ev.target.closest('button[data-cal]');
-    if (!btn) return;
+    if (!btn) {
+      const row = ev.target.closest('article.flight');
+      if (row && !ev.target.closest('a, button, .details')) toggleRow(row);
+      return;
+    }
     const f = allFlights.find((x) => flightKey(x) === btn.dataset.cal);
     if (f) syncToCalendar([f]);
   });
@@ -361,6 +449,8 @@ function init() {
   } catch { /* ignore */ }
 
   updateAuthUi();
+  render();
+  setInterval(render, 30000); // keep countdowns fresh
 }
 
 init();
