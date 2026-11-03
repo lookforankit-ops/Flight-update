@@ -49,13 +49,14 @@
 
     <div class="toolbar">
       <span id="summary"></span>
+      <button id="cal-all" class="primary" hidden></button>
       <label><input type="checkbox" id="show-past"> Show past flights</label>
       <label><input type="checkbox" id="show-cancelled"> Show cancelled</label>
     </div>
 
     <section id="flights" aria-live="polite"></section>
 
-    <p class="privacy">🔒 Runs entirely in your browser with read-only Gmail access. Your emails are never sent to any server other than Google's.</p>
+    <p class="privacy">🔒 Runs entirely in your browser with read-only Gmail access. Your emails are never sent to any server other than Google's. Calendar access is only requested when you add a flight.</p>
   </main>
   <script type="module" src="src/app.js"></script>
 </body>

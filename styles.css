@@ -57,6 +57,9 @@ code { background: var(--chip); padding: 1px 5px; border-radius: 4px; }
 .card footer { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 13px; border-top: 1px solid var(--border); padding-top: 10px; }
 .chip { background: var(--chip); padding: 2px 8px; border-radius: 999px; }
 .chip.muted { color: var(--muted); }
+.chip.ok { color: var(--ok); font-weight: 600; text-decoration: none; }
+button.cal { padding: 3px 10px; font-size: 13px; border-radius: 999px; border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.card.cancelled button.cal { border-color: var(--error); color: var(--error); }
 .src { color: var(--muted); margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .src a { color: inherit; }
 .empty, .privacy { color: var(--muted); text-align: center; }

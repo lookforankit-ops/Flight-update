@@ -1,8 +1,10 @@
 import { extractFlights, mergeFlights, upcomingFlights, AIRLINES } from './parser.js';
 import { DEFAULT_QUERY, listMessageIds, getMessages } from './gmail.js';
 import { sampleMessages } from './samples.js';
+import { buildEvent, eventHash, upsertEvent, deleteEvent } from './calendar.js';
 
-const SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 const $ = (sel) => document.querySelector(sel);
 
 const store = {
@@ -12,7 +14,8 @@ const store = {
 
 let allFlights = [];
 let accessToken = null;
-let tokenClient = null;
+let calendarToken = null; // { token, expires }
+let calendarBusy = false;
 
 function clientId() {
   return store.get('clientId', '') || window.FLIGHT_UPDATE_CONFIG?.googleClientId || '';
@@ -27,6 +30,40 @@ function setStatus(msg, kind = '') {
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+const flightKey = (f) => `${f.flightNumber}|${f.date}`;
+const isDemo = (f) => f.emails.every((e) => e.id.startsWith('demo-'));
+
+function synced() {
+  try { return JSON.parse(store.get('calendarSynced', '') || '{}'); } catch { return {}; }
+}
+function saveSynced(map) { store.set('calendarSynced', JSON.stringify(map)); }
+
+// What, if anything, needs to happen in Google Calendar for this flight.
+function calendarState(f, map = synced()) {
+  if (isDemo(f)) return 'demo';
+  const entry = map[flightKey(f)];
+  if (f.cancelled) return entry ? 'remove' : 'none';
+  if (daysUntil(f.date) < 0) return entry ? 'synced' : 'none';
+  if (!entry) return 'add';
+  return entry.hash === eventHash(buildEvent(f)) ? 'synced' : 'update';
+}
+
+function calendarControl(f, map) {
+  const state = calendarState(f, map);
+  const key = escapeHtml(flightKey(f));
+  const entry = map[flightKey(f)];
+  switch (state) {
+    case 'demo':
+    case 'add': return `<button class="cal" data-cal="${key}">📅 Add to Google Calendar</button>`;
+    case 'update': return `<button class="cal" data-cal="${key}">📅 Update in Calendar</button>`;
+    case 'remove': return `<button class="cal" data-cal="${key}">Remove from Calendar</button>`;
+    case 'synced': return entry?.link
+      ? `<a class="chip ok" href="${escapeHtml(entry.link)}" target="_blank" rel="noopener">✓ In Calendar</a>`
+      : '<span class="chip ok">✓ In Calendar</span>';
+    default: return '';
+  }
 }
 
 function daysUntil(dateStr) {
@@ -64,6 +101,12 @@ function render() {
   if (!showCancelled) list = list.filter((f) => !f.cancelled);
 
   const container = $('#flights');
+  const map = synced();
+  const pending = allFlights.filter((f) => ['add', 'update', 'remove'].includes(calendarState(f, map)));
+  $('#cal-all').hidden = pending.length === 0;
+  $('#cal-all').disabled = calendarBusy;
+  $('#cal-all').textContent = `📅 Sync ${pending.length} flight${pending.length === 1 ? '' : 's'} to Google Calendar`;
+
   const upcomingCount = upcomingFlights(allFlights).length;
   $('#summary').textContent = allFlights.length
     ? `${upcomingCount} upcoming flight${upcomingCount === 1 ? '' : 's'} · ${allFlights.length} found in total`
@@ -111,6 +154,7 @@ function render() {
           ${f.confirmation ? `<span class="chip">Ref <b>${escapeHtml(f.confirmation)}</b></span>` : ''}
           ${f.passenger ? `<span class="chip">${escapeHtml(f.passenger)}</span>` : ''}
           ${f.seat ? `<span class="chip">Seat ${escapeHtml(f.seat)}</span>` : ''}
+          ${calendarControl(f, map)}
           ${f.source === 'text' ? '<span class="chip muted" title="Read from the email text rather than structured booking data, so double-check the details.">Read from email text</span>' : ''}
           <span class="src">${link ? `<a href="${link}" target="_blank" rel="noopener">` : ''}${escapeHtml(email.subject || '(no subject)')}${link ? '</a>' : ''}</span>
         </footer>
@@ -162,35 +206,93 @@ function updateAuthUi() {
   $('#signout').hidden = !accessToken;
 }
 
-function initTokenClient() {
-  if (tokenClient || !clientId() || !window.google?.accounts?.oauth2) return !!tokenClient;
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: clientId(),
-    scope: SCOPE,
-    callback: (resp) => {
-      if (resp.error) return setStatus(`Sign-in failed: ${resp.error}`, 'error');
-      accessToken = resp.access_token;
-      updateAuthUi();
-      scan();
-    },
-    error_callback: (err) => setStatus(`Sign-in was not completed (${err.type}).`, 'warn'),
+// Ask Google for an access token with the given scope. Must be called from a click handler (opens a popup).
+function requestToken(scope) {
+  return new Promise((resolve, reject) => {
+    if (!clientId()) {
+      $('#settings').open = true;
+      $('#client-id').focus();
+      return reject(new Error('First add your Google OAuth client ID in Settings (see the README for the 5-minute setup).'));
+    }
+    if (!window.google?.accounts?.oauth2) return reject(new Error('Google sign-in is still loading. Try again in a moment.'));
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: clientId(),
+      scope,
+      callback: (resp) => {
+        if (resp.error) return reject(new Error(`Sign-in failed: ${resp.error}`));
+        if (!google.accounts.oauth2.hasGrantedAllScopes(resp, scope)) {
+          return reject(new Error('Permission was not granted. Please allow access when Google asks.'));
+        }
+        resolve({ token: resp.access_token, expires: Date.now() + (Number(resp.expires_in) || 3600) * 1000 - 60000 });
+      },
+      error_callback: (err) => reject(new Error(`Sign-in was not completed (${err.type}).`)),
+    });
+    client.requestAccessToken({ prompt: '' });
   });
-  return true;
 }
 
 function signIn() {
-  if (!clientId()) {
-    $('#settings').open = true;
-    $('#client-id').focus();
-    return setStatus('First add your Google OAuth client ID in Settings (see the README for the 5-minute setup).', 'warn');
+  requestToken(GMAIL_SCOPE).then(
+    ({ token }) => { accessToken = token; updateAuthUi(); scan(); },
+    (e) => setStatus(e.message, 'warn'),
+  );
+}
+
+function getCalendarToken() {
+  if (calendarToken && calendarToken.expires > Date.now()) return Promise.resolve(calendarToken.token);
+  return requestToken(CALENDAR_SCOPE).then((t) => { calendarToken = t; return t.token; });
+}
+
+// Add/update/remove the given flights in Google Calendar.
+async function syncToCalendar(flights) {
+  if (calendarBusy) return;
+  const real = flights.filter((f) => !isDemo(f));
+  if (!real.length) return setStatus('Demo flights can’t be added to your calendar. Sign in with Google to use your real flights.', 'warn');
+  calendarBusy = true;
+  document.querySelectorAll('button.cal, #cal-all').forEach((b) => { b.disabled = true; });
+  const tokenPromise = getCalendarToken(); // start the popup synchronously, inside the click
+  let ok = 0;
+  const failed = [];
+  try {
+    const token = await tokenPromise;
+    const map = synced();
+    for (const f of real) {
+      const key = flightKey(f);
+      setStatus(`Updating Google Calendar… ${ok + failed.length + 1}/${real.length}`);
+      try {
+        if (f.cancelled) {
+          if (map[key]) await deleteEvent(token, map[key].id);
+          delete map[key];
+        } else {
+          const event = buildEvent(f);
+          const saved = await upsertEvent(token, event);
+          map[key] = { id: event.id, hash: eventHash(event), link: saved?.htmlLink || null };
+        }
+        ok++;
+        saveSynced(map);
+      } catch (e) {
+        if (e.status === 401) { calendarToken = null; throw new Error('Google Calendar session expired. Please try again.'); }
+        if (e.status === 403 && /has not been used|disabled/i.test(e.message)) {
+          throw new Error('The Google Calendar API is not enabled for your Google Cloud project. Enable it (see README) and try again.');
+        }
+        failed.push(`${f.flightNumber}: ${e.message}`);
+      }
+    }
+    if (failed.length) setStatus(`Calendar updated for ${ok} flight(s). Failed: ${failed.join('; ')}`, 'error');
+    else setStatus(`✓ Google Calendar updated for ${ok} flight${ok === 1 ? '' : 's'}.`, 'ok');
+  } catch (e) {
+    setStatus(e.message, 'error');
+  } finally {
+    calendarBusy = false;
+    render();
   }
-  if (!initTokenClient()) return setStatus('Google sign-in is still loading. Try again in a moment.', 'warn');
-  tokenClient.requestAccessToken({ prompt: '' });
 }
 
 function signOut() {
   if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
+  if (calendarToken) google.accounts.oauth2.revoke(calendarToken.token, () => {});
   accessToken = null;
+  calendarToken = null;
   allFlights = [];
   store.set('lastResults', '');
   updateAuthUi();
@@ -208,7 +310,6 @@ function init() {
     store.set('clientId', $('#client-id').value.trim());
     store.set('query', $('#query').value.trim() || DEFAULT_QUERY);
     store.set('maxEmails', String(Math.max(10, Math.min(2000, Number($('#max-emails').value) || 300))));
-    tokenClient = null;
     $('#settings').open = false;
     setStatus('Settings saved.', 'ok');
   });
@@ -219,6 +320,16 @@ function init() {
   $('#demo').addEventListener('click', () => {
     processMessages(sampleMessages());
     setStatus('Showing demo data. Sign in with Google to see your real flights.', 'ok');
+  });
+  $('#cal-all').addEventListener('click', () => {
+    const map = synced();
+    syncToCalendar(allFlights.filter((f) => ['add', 'update', 'remove'].includes(calendarState(f, map))));
+  });
+  $('#flights').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-cal]');
+    if (!btn) return;
+    const f = allFlights.find((x) => flightKey(x) === btn.dataset.cal);
+    if (f) syncToCalendar([f]);
   });
   $('#show-past').addEventListener('change', render);
   $('#show-cancelled').addEventListener('change', render);
