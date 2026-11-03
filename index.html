@@ -38,6 +38,10 @@
         <label>Max emails to scan
           <input id="max-emails" type="number" min="10" max="2000" step="10">
         </label>
+        <label>Check-in agent address
+          <input id="agent-url" type="text" placeholder="http://localhost:8787" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="hint">Where the web check-in agent runs on your computer (see <code>checkin-agent/README.md</code>).</p>
         <div class="row">
           <button id="save-settings" class="primary">Save</button>
           <button id="reset-query" type="button">Reset query</button>

@@ -50,6 +50,19 @@ function calendarState(f, map = synced()) {
   return entry.hash === eventHash(buildEvent(f)) ? 'synced' : 'update';
 }
 
+const DEFAULT_AGENT_URL = 'http://localhost:8787';
+
+function checkinLink(f) {
+  if (f.cancelled || daysUntil(f.date) < 0) return '';
+  const data = {
+    flightNumber: f.flightNumber, airline: f.airline, from: f.from, to: f.to, fromName: f.fromName, toName: f.toName,
+    date: f.date, departureTime: f.departureTime, departureIso: f.departureIso, confirmation: f.confirmation, passenger: f.passenger,
+  };
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(data)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const base = (store.get('agentUrl', '') || DEFAULT_AGENT_URL).replace(/\/+$/, '');
+  return `<a class="chip action" href="${escapeHtml(base)}/#flight=${b64}" target="_blank" rel="noopener" title="Opens the check-in agent running on your computer">🛂 Web check-in</a>`;
+}
+
 function calendarControl(f, map) {
   const state = calendarState(f, map);
   const key = escapeHtml(flightKey(f));
@@ -155,6 +168,7 @@ function render() {
           ${f.passenger ? `<span class="chip">${escapeHtml(f.passenger)}</span>` : ''}
           ${f.seat ? `<span class="chip">Seat ${escapeHtml(f.seat)}</span>` : ''}
           ${calendarControl(f, map)}
+          ${checkinLink(f)}
           ${f.source === 'text' ? '<span class="chip muted" title="Read from the email text rather than structured booking data, so double-check the details.">Read from email text</span>' : ''}
           <span class="src">${link ? `<a href="${link}" target="_blank" rel="noopener">` : ''}${escapeHtml(email.subject || '(no subject)')}${link ? '</a>' : ''}</span>
         </footer>
@@ -304,12 +318,15 @@ function init() {
   $('#client-id').value = clientId();
   $('#query').value = store.get('query', DEFAULT_QUERY);
   $('#max-emails').value = store.get('maxEmails', '300');
+  $('#agent-url').value = store.get('agentUrl', '') || DEFAULT_AGENT_URL;
   $('#origin').textContent = location.origin;
 
   $('#save-settings').addEventListener('click', () => {
     store.set('clientId', $('#client-id').value.trim());
     store.set('query', $('#query').value.trim() || DEFAULT_QUERY);
     store.set('maxEmails', String(Math.max(10, Math.min(2000, Number($('#max-emails').value) || 300))));
+    store.set('agentUrl', $('#agent-url').value.trim() || DEFAULT_AGENT_URL);
+    render();
     $('#settings').open = false;
     setStatus('Settings saved.', 'ok');
   });

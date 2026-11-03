@@ -1,0 +1,75 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>FakeAir Web Check-in</title>
+<style>.seat{width:40px;height:30px;margin:2px}.occ{background:#999}.paid{background:gold}.step{display:none}.step.on{display:block}</style></head>
+<body>
+<h1>FakeAir web check-in</h1>
+<div id="cookie">We use cookies. <button onclick="this.parentNode.remove()">Accept cookies</button></div>
+
+<section class="step on" id="s1">
+  <label for="pnr">Booking reference</label><input id="pnr">
+  <label for="ln">Last name</label><input id="ln">
+  <button onclick="go(document.getElementById('pnr').value==='ZX4R9T' && document.getElementById('ln').value==='Rao' ? 's2' : 'err')">Find booking</button>
+</section>
+<section class="step" id="err"><p>Booking not found.</p></section>
+
+<section class="step" id="s2">
+  <h2>Travel documents</h2>
+  <label for="pp">Passport number</label><input id="pp" name="passport">
+  <label for="exp">Passport expiry (DD/MM/YYYY)</label><input id="exp">
+  <label for="nat">Nationality</label><select id="nat"><option></option><option>India</option><option>United Kingdom</option></select>
+  <button onclick="go('s3')">Save documents</button>
+</section>
+
+<section class="step" id="s3">
+  <h2>Declaration</h2>
+  <label><input type="checkbox" id="dg"> I confirm I am not carrying dangerous goods.</label>
+  <button onclick="if(document.getElementById('dg').checked) go('s4')">Continue</button>
+</section>
+
+<section class="step" id="s4">
+  <h2>Choose your seat (layout ABC DEF)</h2>
+  <div id="map"></div>
+  <p>Current seat: 23B</p>
+  <button onclick="go('s5')">Confirm seat</button>
+</section>
+
+<section class="step" id="s5">
+  <h2>Extras</h2>
+  <button id="bag" onclick="document.body.dataset.bag='bought'">Add 15kg extra baggage ₹1,500</button>
+  <button onclick="go('s6')">No thanks, continue</button>
+  <label for="cc">Card number</label><input id="cc" autocomplete="cc-number">
+</section>
+
+<section class="step" id="s6">
+  <p>Ready to check in: Asha Rao, flight FA123, seat <span id="chosen"></span></p>
+  <button onclick="go('s7')">Complete check-in</button>
+</section>
+
+<section class="step" id="s7">
+  <h2>You're checked in!</h2>
+  <a href="/boarding-pass.pdf" download>Download boarding pass</a>
+</section>
+
+<script>
+  function go(id){document.querySelectorAll('.step').forEach(s=>s.classList.remove('on'));document.getElementById(id).classList.add('on');}
+  // 3: paid windows; 10: plain free window (aisle free); 12F: window, aisle 12D booked, middle 12E empty
+  const rows = { 3: 'aooooa', 10: 'aaaooo', 12: 'ooooaa', 15: 'aaaaaa' };
+  const map = document.getElementById('map');
+  for (const [r, spec] of Object.entries(rows)) {
+    const div = document.createElement('div');
+    [...'ABCDEF'].forEach((l, i) => {
+      const b = document.createElement('button');
+      b.className = 'seat';
+      const occ = spec[i] === 'o';
+      const paid = r === '3';
+      b.textContent = r + l;
+      b.setAttribute('aria-label', `Seat ${r}${l}, ${occ ? 'occupied' : 'available'}${paid && !occ ? ', ₹450' : occ ? '' : ', free'}`);
+      if (occ) { b.disabled = true; b.classList.add('occ'); }
+      if (paid) b.classList.add('paid');
+      b.onclick = () => { document.getElementById('chosen').textContent = r + l; document.body.dataset.seat = r + l; };
+      div.append(b);
+    });
+    map.append(div);
+  }
+</script>
+</body></html>

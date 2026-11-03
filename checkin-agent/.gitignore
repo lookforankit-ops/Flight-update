@@ -1,0 +1,4 @@
+node_modules/
+.browser-profile/
+.traveller-profile.json
+boarding-passes/

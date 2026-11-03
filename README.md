@@ -5,6 +5,7 @@ A small web app that reads the flight booking emails in your Gmail and lists all
 - **Private:** it runs entirely in your browser and asks Google only for read-only Gmail access (`gmail.readonly`). There is no backend, and your email never goes anywhere except between your browser and Google.
 - **Accurate where possible:** it first reads the [schema.org `FlightReservation`](https://developers.google.com/gmail/markup/reference/flight-reservation) data that most airlines and travel agencies put in their emails (Gmail reads the same data). If that is missing, it falls back to reading the email text (flight numbers like `6E 2134`, airport codes like `(DEL)` or `DEL → BOM`, dates and times).
 - **Google Calendar sync:** add one flight, or all upcoming flights at once, to your Google Calendar. Events are placed at the airport's local time (an overnight DEL → LHR flight ends the next morning, London time) and include the booking reference, passenger and seat. Syncing again updates an event instead of duplicating it. If a flight's time changes, the card shows **Update in Calendar**. If a cancellation email arrives, it shows **Remove from Calendar**.
+- **Web check-in agent:** the **🛂 Web check-in** button on each upcoming flight hands it to the [check-in agent](checkin-agent/README.md). The agent runs on your computer and completes online check-in with Claude. It asks you for passport/visa details, picks seats by your rules, and asks before any fee.
 - **De-duplicated:** confirmation, change and check-in emails for the same flight are merged into one entry. Newer emails win, and a later "cancelled" email marks the flight as cancelled.
 
 ## Quick start
@@ -38,6 +39,7 @@ Google requires every app that reads Gmail to have its own OAuth client ID:
 
 - **Gmail search query:** which emails get scanned. The default searches the last year for words like *flight*, *itinerary*, *e-ticket*, *PNR* and *booking reference*. You can narrow it (e.g. add `from:(indigo OR airindia OR emirates)`) or widen it (e.g. `newer_than:2y`).
 - **Max emails to scan:** defaults to 300.
+- **Check-in agent address:** where the check-in agent runs (default `http://localhost:8787`).
 - **Show past flights / Show cancelled:** toggles in the list.
 
 The results of the last scan are cached in your browser so the list shows right away next time. **Sign out** clears them and revokes the tokens.
@@ -58,6 +60,7 @@ src/calendar.js  flight -> Calendar event (time zones, overnight arrivals), upse
 src/airports.js  airport -> time zone table for flights read from email text
 src/app.js       UI and Google sign-in
 src/samples.js   demo emails
+checkin-agent/   the web check-in agent (see its README)
 test/            parser and calendar tests
 ```
 

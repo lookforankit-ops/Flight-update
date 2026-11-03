@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Check-in Agent</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛂</text></svg>">
+  <style>
+    :root { --bg:#f5f6f8; --surface:#fff; --text:#1b1f24; --muted:#5f6b7a; --border:#e1e5ea; --accent:#1f6feb; --accent-text:#fff; --ok:#1a7f37; --warn:#9a6700; --error:#cf222e; --chip:#eef2f7; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#0f1216; --surface:#171b21; --text:#e6e9ee; --muted:#93a0b0; --border:#2a313b; --accent:#4c8dff; --accent-text:#0b0d10; --ok:#4ac26b; --warn:#d4a72c; --error:#ff6b6b; --chip:#222932; } }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+    main { max-width:760px; margin:0 auto; padding:24px 16px 48px; }
+    h1 { margin:0; font-size:1.5rem; } .sub { margin:4px 0 16px; color:var(--muted); }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:12px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+    label { display:grid; gap:4px; font-weight:500; font-size:14px; }
+    input, select { font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:100%; }
+    button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
+    button.primary { background:var(--accent); color:var(--accent-text); border-color:var(--accent); font-weight:600; }
+    button.danger { color:var(--error); border-color:var(--error); }
+    button:disabled { opacity:.6; cursor:default; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; align-items:center; }
+    .prompt { border:2px solid var(--accent); }
+    .prompt h2 { margin:0 0 6px; font-size:1.1rem; }
+    .msg { white-space:pre-wrap; margin:0 0 10px; }
+    .opt { display:flex; gap:8px; align-items:flex-start; padding:6px 0; font-weight:400; grid-template-columns:none; }
+    .opt input { width:auto; margin-top:4px; }
+    .check { display:flex; gap:8px; align-items:center; font-weight:400; } .check input { width:auto; }
+    #log { font-size:14px; max-height:50vh; overflow:auto; }
+    #log div { padding:4px 0; border-bottom:1px solid var(--border); white-space:pre-wrap; word-break:break-word; }
+    #log div:last-child { border-bottom:0; }
+    .result.ok { border-color:var(--ok); } .result.bad { border-color:var(--error); }
+    .muted { color:var(--muted); font-size:13px; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; background:var(--chip); font-size:13px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>🛂 Check-in Agent</h1>
+  <p class="sub">Checks you in online. It asks you before using passport or visa details, before any payment, and whenever a seat choice isn't covered by your seat rules.</p>
+
+  <section class="card" id="flight-card">
+    <div class="grid">
+      <label>Flight number <input id="f-flightNumber" placeholder="6E2134" autocomplete="off"></label>
+      <label>Date <input id="f-date" type="date"></label>
+      <label>Departure time <input id="f-departureTime" type="time"></label>
+      <label>From <input id="f-from" placeholder="DEL" maxlength="3" autocomplete="off"></label>
+      <label>To <input id="f-to" placeholder="BLR" maxlength="3" autocomplete="off"></label>
+      <label>Booking ref (PNR) <input id="f-confirmation" placeholder="ZX4R9T" autocomplete="off"></label>
+      <label>Passenger <input id="f-passenger" placeholder="First Last" autocomplete="off"></label>
+      <label>Check-in page (optional) <input id="f-checkinUrl" placeholder="https://…" autocomplete="off"></label>
+    </div>
+    <div class="row">
+      <button id="start" class="primary">Start web check-in</button>
+      <button id="cancel" class="danger" hidden>Stop</button>
+      <span id="conn" class="muted"></span>
+    </div>
+  </section>
+
+  <div id="prompts"></div>
+  <div id="result"></div>
+  <section class="card"><div class="muted" style="margin-bottom:6px">Activity</div><div id="log"><div class="muted">Nothing yet.</div></div></section>
+  <p class="muted">Seat rules: 1) a free window seat in a row where the aisle seat is booked and the middle is empty; 2) any free window seat; otherwise you choose. Passport/visa details are typed into the airline site from this computer and never shown to the AI model.</p>
+</main>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const FIELDS = ['flightNumber', 'date', 'departureTime', 'from', 'to', 'confirmation', 'passenger', 'checkinUrl'];
+  let flightExtra = {};
+  let running = false;
+  const baseTitle = document.title;
+
+  const add = (parent, ...children) => parent.append(...children.flat().filter((c) => c != null));
+
+  function el(tag, attrs = {}, ...children) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'on') for (const [ev, fn] of Object.entries(v)) e.addEventListener(ev, fn);
+      else if (k in e && typeof v !== 'string') e[k] = v;
+      else e.setAttribute(k, v);
+    }
+    for (const c of children.flat()) if (c != null) e.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    return e;
+  }
+
+  // Flight passed from the Flight Update app as #flight=<base64url JSON>
+  try {
+    const m = location.hash.match(/flight=([^&]+)/);
+    if (m) {
+      const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+      const flight = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      flightExtra = flight;
+      for (const f of FIELDS) if (flight[f]) $(`#f-${f}`).value = flight[f];
+      history.replaceState(null, '', location.pathname);
+    }
+  } catch (e) { console.warn('Could not read flight from link', e); }
+
+  function readFlight() {
+    const f = { ...flightExtra };
+    for (const k of FIELDS) { const v = $(`#f-${k}`).value.trim(); if (v) f[k] = v; else delete f[k]; }
+    if (f.flightNumber) f.flightNumber = f.flightNumber.toUpperCase().replace(/\s+/g, '');
+    for (const k of ['from', 'to', 'confirmation']) if (f[k]) f[k] = f[k].toUpperCase();
+    return f;
+  }
+
+  async function post(path, body) {
+    const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  }
+
+  $('#start').addEventListener('click', async () => {
+    const flight = readFlight();
+    if (!flight.flightNumber || !flight.date) return alert('Flight number and date are needed.');
+    try { Notification?.permission === 'default' && Notification.requestPermission(); } catch {}
+    try { await post('/api/start', { flight }); } catch (e) { alert(e.message); }
+  });
+  $('#cancel').addEventListener('click', () => post('/api/cancel').catch(() => {}));
+
+  function addLog(text) {
+    const log = $('#log');
+    if (log.firstElementChild?.classList.contains('muted')) log.innerHTML = '';
+    log.append(el('div', {}, text));
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function notify(title, body) {
+    document.title = `(!) ${baseTitle}`;
+    try { if (document.hidden && Notification.permission === 'granted') new Notification(title, { body }); } catch {}
+  }
+
+  function promptCard(p) {
+    const card = el('section', { class: 'card prompt', id: `prompt-${p.id}` }, el('h2', {}, p.title || 'Question'), p.message ? el('p', { class: 'msg' }, p.message) : null);
+    const answer = (value) => {
+      card.querySelectorAll('button,input,select').forEach((x) => { x.disabled = true; });
+      post('/api/answer', { id: p.id, answer: value }).catch((e) => alert(e.message));
+    };
+    if (p.kind === 'confirm') {
+      add(card, el('div', { class: 'row' },
+        el('button', { class: 'primary', on: { click: () => answer({ yes: true }) } }, 'Yes, allow'),
+        el('button', { on: { click: () => answer({ yes: false }) } }, 'No')));
+    } else if (p.kind === 'form') {
+      const inputs = {};
+      const grid = el('div', { class: 'grid' });
+      for (const f of p.fields) {
+        let input;
+        if (f.options?.length) {
+          input = el('select', {}, el('option', { value: '' }, '—'), f.options.map((o) => el('option', { value: o }, o)));
+        } else {
+          input = el('input', { type: f.type === 'date' ? 'date' : 'text', autocomplete: 'off', spellcheck: 'false' });
+        }
+        input.value = f.value || '';
+        inputs[f.name] = input;
+        grid.append(el('label', {}, f.label, input));
+      }
+      const remember = el('input', { type: 'checkbox' });
+      add(card, grid,
+        p.allowRemember ? el('label', { class: 'check', style: 'margin-top:10px' }, remember, 'Remember on this computer for next time') : null,
+        el('div', { class: 'row' },
+          el('button', { class: 'primary', on: { click: () => answer({ values: Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value.trim()])), remember: remember.checked }) } }, 'Submit'),
+          el('button', { on: { click: () => answer(null) } }, 'I don\'t want to provide these')),
+        el('p', { class: 'muted' }, 'These are typed into the airline website from this computer. The AI only sees placeholders.'));
+    } else if (p.kind === 'choose') {
+      const name = `c${p.id}`;
+      const list = el('div', {}, p.options.map((o, i) => el('label', { class: 'opt' }, el('input', { type: 'radio', name, value: o.id, checked: i === 0 }), o.label)));
+      const other = el('input', { placeholder: 'Or type your own answer', autocomplete: 'off' });
+      add(card, list, p.allowOther ? other : null, el('div', { class: 'row' },
+        el('button', { class: 'primary', on: { click: () => {
+          if (other.value.trim()) return answer({ other: other.value.trim() });
+          const sel = card.querySelector(`input[name=${name}]:checked`);
+          answer(sel ? { choice: sel.value } : null);
+        } } }, 'Continue')));
+    } else if (p.kind === 'text') {
+      const input = el('input', { autocomplete: 'off' });
+      add(card, input, el('div', { class: 'row' },
+        el('button', { class: 'primary', on: { click: () => answer(input.value.trim() ? { value: input.value.trim() } : null) } }, 'Send'),
+        el('button', { on: { click: () => answer(null) } }, 'Skip')));
+    } else if (p.kind === 'wait') {
+      add(card, el('div', { class: 'row' },
+        el('button', { class: 'primary', on: { click: () => answer({ done: true }) } }, 'Done, continue'),
+        el('button', { on: { click: () => answer({ done: false }) } }, 'Cancel check-in')));
+    }
+    return card;
+  }
+
+  const STATUS = { checked_in: ['✅ Checked in', 'ok'], not_open_yet: ['⏳ Not open yet', 'bad'], needs_user: ['🙋 Needs you', 'bad'], failed: ['❌ Not completed', 'bad'] };
+
+  function handle(ev) {
+    if (ev.type === 'reset') { $('#prompts').innerHTML = ''; $('#result').innerHTML = ''; $('#log').innerHTML = ''; }
+    if (ev.type === 'state') {
+      running = ev.running;
+      $('#start').disabled = running;
+      $('#cancel').hidden = !running;
+    }
+    if (ev.type === 'log') addLog(ev.message);
+    if (ev.type === 'prompt') {
+      $('#prompts').append(promptCard(ev));
+      notify(ev.title || 'Check-in agent needs you', ev.message || '');
+      $(`#prompt-${ev.id}`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    if (ev.type === 'answered') { $(`#prompt-${ev.id}`)?.remove(); document.title = baseTitle; }
+    if (ev.type === 'done') {
+      const [label, cls] = STATUS[ev.result.status] || [ev.result.status, 'bad'];
+      $('#result').replaceChildren(el('section', { class: `card result ${cls}` },
+        el('h2', { style: 'margin:0 0 6px;font-size:1.1rem' }, label),
+        el('p', { class: 'msg' }, ev.result.summary || ''),
+        ev.result.seat ? el('p', {}, el('span', { class: 'badge' }, `Seat ${ev.result.seat}`)) : null,
+        ev.result.downloads?.length ? el('p', { class: 'muted' }, `Boarding pass saved to: ${ev.result.downloads.join(', ')}`) : null));
+      notify(label, ev.result.summary || '');
+    }
+  }
+
+  function connect() {
+    const es = new EventSource('/api/events');
+    es.onopen = () => { $('#conn').textContent = ''; };
+    es.onmessage = (m) => handle(JSON.parse(m.data));
+    es.onerror = () => { $('#conn').textContent = 'Reconnecting to the agent…'; };
+    // A reconnect replays all events, so start from a clean slate.
+    es.addEventListener('open', () => { $('#prompts').innerHTML = ''; $('#result').innerHTML = ''; $('#log').innerHTML = ''; });
+  }
+  connect();
+  window.addEventListener('focus', () => { document.title = baseTitle; });
+</script>
+</body>
+</html>

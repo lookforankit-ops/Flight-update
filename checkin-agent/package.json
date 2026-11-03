@@ -1,0 +1,16 @@
+{
+  "name": "flight-checkin-agent",
+  "version": "1.0.0",
+  "description": "Web check-in agent for flights from the Flight Update app.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "checkin": "node src/cli.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
+    "playwright": "^1.63.0"
+  }
+}
