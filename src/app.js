@@ -1,5 +1,5 @@
-import { extractFlights, mergeFlights, upcomingFlights, AIRLINES } from './parser.js';
-import { DEFAULT_QUERY, listMessageIds, getMessages } from './gmail.js';
+import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText } from './parser.js';
+import { DEFAULT_QUERY, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js';
 import { sampleMessages } from './samples.js';
 import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js';
 import { AIRPORT_TZ, CITIES } from './airports.js';
@@ -280,10 +280,34 @@ function render() {
   }).join('');
 }
 
+// Emails from the last scan where no flight was found (kept in memory only, for the Settings panel).
+let skipped = [];
+
+function renderSkipped() {
+  const box = $('#skipped');
+  if (!skipped.length) { box.hidden = true; return; }
+  box.hidden = false;
+  box.querySelector('summary').textContent = `Emails with no flights found (${skipped.length})`;
+  box.querySelector('ul').innerHTML = skipped.map((m, i) => `
+    <li>
+      <div class="sk-subj">${escapeHtml(m.subject || '(no subject)')}</div>
+      <div class="sk-from">${escapeHtml(m.from)}</div>
+      <div class="row">
+        ${m.id.startsWith('demo-') ? '' : `<a href="https://mail.google.com/mail/u/0/#all/${escapeHtml(m.id)}" target="_blank" rel="noopener">Open in Gmail</a>`}
+        <button type="button" class="link" data-copy="${i}">Copy email text</button>
+      </div>
+    </li>`).join('');
+}
+
 function processMessages(messages) {
+  skipped = [];
   const flights = messages.flatMap((m) => {
-    try { return extractFlights(m); } catch (e) { console.warn('Parse failed', m.id, e); return []; }
+    let found = [];
+    try { found = extractFlights(m); } catch (e) { console.warn('Parse failed', m.id, e); }
+    if (!found.length) skipped.push({ id: m.id, subject: m.subject, from: m.from, body: (m.text && m.text.trim()) || htmlToText(m.html || '') });
+    return found;
   });
+  renderSkipped();
   allFlights = mergeFlights(flights);
   store.set('lastResults', JSON.stringify({ at: Date.now(), flights: allFlights }));
   render();
@@ -427,7 +451,20 @@ function signOut() {
 
 function init() {
   $('#client-id').value = clientId();
+  if (OLD_DEFAULT_QUERIES.includes(store.get('query', ''))) store.set('query', DEFAULT_QUERY);
   $('#query').value = store.get('query', DEFAULT_QUERY);
+  $('#skipped').addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('[data-copy]');
+    if (!btn) return;
+    const m = skipped[Number(btn.dataset.copy)];
+    const text = `Subject: ${m.subject}\nFrom: ${m.from}\n\n${m.body}`.slice(0, 20000);
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = 'Copied ✓';
+    } catch {
+      window.prompt('Copy this text:', text.slice(0, 2000));
+    }
+  });
   $('#max-emails').value = store.get('maxEmails', '300');
   $('#agent-url').value = store.get('agentUrl', '') || DEFAULT_AGENT_URL;
   $('#origin').textContent = location.origin;

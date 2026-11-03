@@ -27,7 +27,28 @@ const AIRLINES = {
   G9: 'Air Arabia', WY: 'Oman Air', GF: 'Gulf Air', SV: 'Saudia', KU: 'Kuwait Airways', NZ: 'Air New Zealand',
 };
 
+import { AIRPORT_TZ, CITIES } from './airports.js';
+
 const pad = (n) => String(n).padStart(2, '0');
+
+// Known airport codes that are also common uppercase words; only trusted in clearer contexts.
+const AMBIGUOUS_CODES = new Set(['CAN', 'ADD', 'MAN', 'PER', 'SIN', 'MED', 'PAT', 'MAD', 'LOS', 'SAN', 'DAD', 'HEL', 'BER', 'LIS', 'ARN', 'RAJ', 'NAG', 'AUS', 'MEL', 'ORD', 'DEN', 'OAK', 'ATL', 'BOS', 'MIA']);
+
+// City name -> main airport, for emails that only say "Delhi to Mumbai".
+const CITY_TO_CODE = (() => {
+  const m = {};
+  for (const [code, city] of Object.entries(CITIES)) {
+    const k = city.toLowerCase();
+    if (!(k in m)) m[k] = code;
+  }
+  Object.assign(m, {
+    'new delhi': 'DEL', bangalore: 'BLR', bombay: 'BOM', calcutta: 'CCU', madras: 'MAA', cochin: 'COK',
+    trivandrum: 'TRV', mangalore: 'IXE', vizag: 'VTZ', baroda: 'BDQ', trichy: 'TRZ', calicut: 'CCJ', hubli: 'HBX',
+    gurgaon: 'DEL', gurugram: 'DEL', noida: 'DEL', 'port blair': 'IXZ', mysore: 'MYQ', varanasi: 'VNS', benaras: 'VNS',
+  });
+  return m;
+})();
+const CITY_RE = new RegExp(`\\b(${Object.keys(CITY_TO_CODE).sort((a, b) => b.length - a.length).map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'gi');
 
 export function decodeEntities(s) {
   return s
@@ -174,12 +195,18 @@ export function findDates(text, refDate) {
     // 2026-11-20
     [/\b(20\d{2})-(\d{2})-(\d{2})\b/g, (m) => [+m[1], +m[2], +m[3]]],
     // 20 Nov 2026 / 20th November, 2026 / 20-Nov-2026 / 20 Nov '26
-    [new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?[\\s-]+${MON}[\\s,-]+'?(20\\d{2}|\\d{2})\\b`, 'gi'),
+    [new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?[\\s-]*${MON}[\\s,-]*[’']?(20\\d{2}|\\d{2})\\b`, 'gi'),
       (m) => [m[3].length === 2 ? 2000 + +m[3] : +m[3], monthNum(m[2]), +m[1]]],
     // Nov 20, 2026
     [new RegExp(`\\b${MON}\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(20\\d{2})\\b`, 'gi'), (m) => [+m[3], monthNum(m[1]), +m[2]]],
+    // 20/11/2026, 20-11-2026, 20.11.26 (day first, as on Indian tickets; month first only when unambiguous)
+    [/\b(\d{1,2})[/.-](\d{1,2})[/.-](20\d{2}|\d{2})\b/g, (m) => {
+      let [a, b] = [+m[1], +m[2]];
+      if (b > 12 && a <= 12) [a, b] = [b, a];
+      return [m[3].length === 2 ? 2000 + +m[3] : +m[3], b <= 12 ? b : null, a];
+    }],
     // Fri, 20 Nov  (no year)
-    [new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MON}(?![\\s,-]+'?\\d)`, 'gi'), (m) => [null, monthNum(m[2]), +m[1]]],
+    [new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MON}(?![\\s,-]*[’']?\\d)`, 'gi'), (m) => [null, monthNum(m[2]), +m[1]]],
     // Nov 20 (no year)
     [new RegExp(`\\b${MON}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?!,?\\s+\\d)`, 'gi'), (m) => [null, monthNum(m[1]), +m[2]]],
   ];
@@ -200,6 +227,9 @@ export function findDates(text, refDate) {
 
 export function findTimes(text) {
   const out = [];
+  const hrs = /\b([01]\d|2[0-3])([0-5]\d)\s*(?:hrs|hours|h)\b/gi;
+  let h;
+  while ((h = hrs.exec(text))) out.push({ index: h.index, time: `${h[1]}:${h[2]}` });
   const re = /\b([01]?\d|2[0-3])[:.h]([0-5]\d)\s*(am|pm|a\.m\.|p\.m\.)?(?![\d.])/gi;
   let m;
   while ((m = re.exec(text))) {
@@ -209,7 +239,7 @@ export function findTimes(text) {
     if (ap.startsWith('a') && h === 12) h = 0;
     out.push({ index: m.index, time: `${pad(h)}:${m[2]}` });
   }
-  return out;
+  return out.sort((a, b) => a.index - b.index);
 }
 
 function findAirports(text) {
@@ -232,7 +262,17 @@ function findAirports(text) {
   // Codes on their own line / next to times in boarding-pass style layouts.
   const lone = /(?:^|\n|\t|\s{2})([A-Z]{3})(?=\s*(?:\n|\t|\s{2}|$|\d{1,2}[:.]\d{2}))/g;
   while ((m = lone.exec(text))) push(m[1], m.index + m[0].length - 3);
-  return codes;
+  // Any known airport code written in capitals ("DEL 12 Nov", "BLR, Terminal 1").
+  const known = /\b([A-Z]{3})\b/g;
+  while ((m = known.exec(text))) {
+    if (AIRPORT_TZ[m[1]] && !AMBIGUOUS_CODES.has(m[1]) && !codes.some((c) => c.index === m.index)) push(m[1], m.index);
+  }
+  codes.sort((a, b) => a.index - b.index);
+  if (new Set(codes.map((c) => c.code)).size >= 2) return codes;
+  // Last resort: city names ("Delhi to Mumbai").
+  CITY_RE.lastIndex = 0;
+  while ((m = CITY_RE.exec(text))) codes.push({ code: CITY_TO_CODE[m[1].toLowerCase()], index: m.index });
+  return codes.sort((a, b) => a.index - b.index);
 }
 
 export function findConfirmation(text) {
@@ -322,8 +362,13 @@ export function extractFlights(message) {
   const { html = '', text = '', subject = '', date } = message;
   let flights = parseJsonLd(html);
   if (flights.length === 0) {
-    const body = (text && text.trim()) || htmlToText(html);
-    flights = parseHeuristic(`${subject}\n${body}`, { refDate: date, subject });
+    // Some emails have a near-empty plain-text part and the real ticket in HTML (or the reverse): try both.
+    const bodies = [text && text.trim(), html && htmlToText(html)].filter(Boolean);
+    for (const body of bodies) {
+      const found = parseHeuristic(`${subject}\n${body}`, { refDate: date, subject })
+        .filter((f) => f.flightNumber && f.date && f.from && f.to);
+      if (found.length > flights.length) flights = found;
+    }
   }
   return flights
     .filter((f) => f.flightNumber && f.date && f.from && f.to)

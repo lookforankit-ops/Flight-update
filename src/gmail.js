@@ -3,7 +3,12 @@
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
 export const DEFAULT_QUERY =
-  'newer_than:1y -in:spam {flight flights itinerary e-ticket eticket "boarding pass" PNR "booking reference" "confirmation code" "record locator"}';
+  'newer_than:1y -in:spam {flight flights itinerary e-ticket eticket "boarding pass" PNR "booking reference" "confirmation code" "record locator" "booking id" "booking confirmation" "trip id" smartbuy from:smartbuy}';
+
+// Earlier defaults, so a saved copy of one can be upgraded to the current default.
+export const OLD_DEFAULT_QUERIES = [
+  'newer_than:1y -in:spam {flight flights itinerary e-ticket eticket "boarding pass" PNR "booking reference" "confirmation code" "record locator"}',
+];
 
 async function api(token, path) {
   const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } });

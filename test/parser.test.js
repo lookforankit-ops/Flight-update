@@ -80,3 +80,32 @@ test('route line before the flight number', () => {
   const [f] = parseHeuristic('Your trip\nLHR → JFK\nBA 117 · Tue 8 Dec 2026 · 08:25 – 11:20', {});
   assert.deepEqual([f.flightNumber, f.from, f.to, f.date, f.departureTime], ['BA117', 'LHR', 'JFK', '2026-12-08', '08:25']);
 });
+
+// Layouts typical of bank/OTA travel portals (e.g. SmartBuy). Modelled, not copied from a real email.
+test('portal ticket: codes next to times, numeric dates, booking id vs airline PNR', () => {
+  const text = `SmartBuy Flight Booking Confirmed\nBooking ID: SB1234567890\nAirline PNR: ZX4R9T\n\nOnward: Delhi to Bengaluru\nIndiGo 6E-2134 Economy\nDEL 06:15\n12/11/2026\nIndira Gandhi International Airport, Terminal 1\nBLR 09:05\n12/11/2026\nKempegowda International Airport\n`;
+  const [f] = parseHeuristic(text, { refDate: '2026-11-01' });
+  assert.deepEqual([f.flightNumber, f.from, f.to, f.date, f.departureTime, f.arrivalTime, f.confirmation], ['6E2134', 'DEL', 'BLR', '2026-11-12', '06:15', '09:05', 'ZX4R9T']);
+});
+
+test('portal ticket: HTML table with codes followed by dates, "Nov\'26" and "hrs" times', () => {
+  const html = `<table><tr><td>Air India</td><td>AI-916</td></tr>
+    <tr><td>DXB Thu, 19 Nov'26</td><td>2040 hrs</td><td>DEL Fri, 20 Nov'26</td><td>0150 hrs</td></tr></table>
+    <p>PNR: QW8E2P</p>`;
+  const [f] = extractFlights({ id: 'x', subject: 'Your flight booking', date: '2026-11-01', html });
+  assert.deepEqual([f.flightNumber, f.from, f.to, f.date, f.departureTime, f.arrivalDate, f.arrivalTime], ['AI916', 'DXB', 'DEL', '2026-11-19', '20:40', '2026-11-20', '01:50']);
+});
+
+test('city names only ("Mumbai to Dubai") still give airports', () => {
+  const [f] = parseHeuristic('Flight EK 501\nMumbai to Dubai\n13 Dec 2026, 04:25 - 06:05', {});
+  assert.deepEqual([f.flightNumber, f.from, f.to, f.date], ['EK501', 'BOM', 'DXB', '2026-12-13']);
+});
+
+test('uses the HTML part when the plain-text part is just a stub', () => {
+  const [f] = extractFlights({
+    id: 'y', subject: 'Booking confirmation', date: '2026-11-01',
+    text: 'Your booking is confirmed. View this email in your browser.',
+    html: '<p>Flight UK 955</p><p>BOM → DEL</p><p>5 Dec 2026 10:00</p>',
+  });
+  assert.equal(f.flightNumber, 'UK955');
+});
