@@ -356,24 +356,57 @@ export function parseHeuristic(text, { refDate, subject = '' } = {}) {
   });
 }
 
+// ---------- What kind of email is this? ----------
+
+// Marketing: sales, "seats filling fast", abandoned-search reminders...
+const PROMO_SUBJECT = /\b(hurry|seats? left|few seats|filling fast|last chance|flash sale|sale\b|deals?\b|offers?\b|fares? (?:from|starting)|lowest fares?|price (?:drop|alert)|don'?t miss|limited[- ]time|\d+\s?% off|discount|cashback|save (?:up to|big)|book now|complete your (?:booking|trip)|still (?:thinking|planning)|you searched|your (?:recent )?search|continue (?:your )?booking|left something|newsletter|exclusive|getaway|wanderlust|explore)\b/i;
+const PROMO_BODY = /\b(complete your booking|continue (?:your )?booking|you (?:recently )?searched|you were looking|seats? (?:are )?(?:filling|selling) fast|only \d+ seats? left|fares? starting (?:from|at)|book (?:your tickets? )?now before)\b/i;
+const BOOKING_SUBJECT = /\b(confirm(?:ed|ation)|e-?ticket|itinerary|booking (?:id|ref|reference|details)|pnr|boarding pass|check-?in|reservation|trip (?:id|details)|schedule change|flight (?:change|update))\b/i;
+
+// Cancellations and refunds. Body phrases are specific, because every ticket mentions its "cancellation policy".
+const CANCEL_SUBJECT = /\b(cancell?(?:ed|ation)|refund(?:ed)?)\b/i;
+const CANCEL_BODY = /\b(?:(?:booking|ticket|flight|pnr|reservation|itinerary|trip)s?\b[^.\n]{0,40}?\b(?:has|have|was|were|is|are|got)\s+(?:been\s+)?(?:successfully\s+|fully\s+)?cancell?ed|cancellation (?:is |has been )?(?:confirmed|successful|processed|completed)|refund (?:has been |was |is )?(?:processed|initiated|credited|completed|approved)|refund status)\b/i;
+
+/** @returns {{promo: boolean, cancelled: boolean}} */
+export function classifyEmail({ subject = '', body = '' }) {
+  const cancelled = CANCEL_SUBJECT.test(subject) || CANCEL_BODY.test(body);
+  const promo = !cancelled && (
+    (PROMO_SUBJECT.test(subject) && !BOOKING_SUBJECT.test(subject))
+    || (PROMO_BODY.test(body) && !findConfirmation(body))
+  );
+  return { promo, cancelled };
+}
+
+// Proof that an email is about a real booking: a PNR/booking reference or an e-ticket number.
+function hasBookingEvidence(body) {
+  return !!findConfirmation(body) || /\bticket\s*(?:number|no\.?|#)?\s*[:#-]?\s*\d{3}[- ]?\d{10}\b/i.test(body);
+}
+
 // ---------- Message-level extraction, merging, filtering ----------
 
 export function extractFlights(message) {
   const { html = '', text = '', subject = '', date } = message;
+  const bodies = [text && text.trim(), html && htmlToText(html)].filter(Boolean);
+  const kind = classifyEmail({ subject, body: bodies.join('\n') });
+  if (kind.promo) return [];
+
   let flights = parseJsonLd(html);
   if (flights.length === 0) {
     // Some emails have a near-empty plain-text part and the real ticket in HTML (or the reverse): try both.
-    const bodies = [text && text.trim(), html && htmlToText(html)].filter(Boolean);
     for (const body of bodies) {
       const found = parseHeuristic(`${subject}\n${body}`, { refDate: date, subject })
         .filter((f) => f.flightNumber && f.date && f.from && f.to);
       if (found.length > flights.length) flights = found;
     }
+    // Flights read from free text only count when the email shows it's a real booking
+    // (cancellation/refund emails are kept: they mark an existing booking as cancelled).
+    if (!kind.cancelled && !bodies.some(hasBookingEvidence)) flights = [];
   }
   return flights
     .filter((f) => f.flightNumber && f.date && f.from && f.to)
     .map((f) => ({
       ...f,
+      cancelled: f.cancelled || kind.cancelled,
       emails: [{ id: message.id, subject, from: message.from || '', date: date || null }],
       emailDate: date ? new Date(date).getTime() : 0,
     }));

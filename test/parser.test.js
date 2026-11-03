@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseJsonLd, parseHeuristic, extractFlights, mergeFlights, upcomingFlights,
-  findDates, findTimes, findConfirmation, htmlToText,
+  findDates, findTimes, findConfirmation, htmlToText, classifyEmail,
 } from '../src/parser.js';
 
 test('parses schema.org FlightReservation JSON-LD', () => {
@@ -63,9 +63,9 @@ test('date / time / confirmation helpers', () => {
 
 test('merge prefers newer email and tracks cancellation; upcoming filters past', () => {
   const base = { from: 'DEL', to: 'BOM', date: '2026-12-01', flightNumber: 'AI864' };
-  const a = extractFlights({ id: '1', subject: 'Booking', date: '2026-10-01', text: `AI 864 DEL - BOM 1 Dec 2026 07:00` });
+  const a = extractFlights({ id: '1', subject: 'Booking', date: '2026-10-01', text: `PNR: QW8E2P\nAI 864 DEL - BOM 1 Dec 2026 07:00` });
   const b = extractFlights({ id: '2', subject: 'Your flight has been cancelled', date: '2026-10-05', text: `AI 864 DEL - BOM 1 Dec 2026 07:00` });
-  const past = extractFlights({ id: '3', subject: 'Booking', date: '2026-01-01', text: `UK 955 BOM - DEL 1 Feb 2026 10:00` });
+  const past = extractFlights({ id: '3', subject: 'Booking', date: '2026-01-01', text: `PNR: HJ7K2L\nUK 955 BOM - DEL 1 Feb 2026 10:00` });
   const merged = mergeFlights([...b, ...a, ...past]);
   assert.equal(merged.length, 2);
   const m = merged.find((f) => f.flightNumber === base.flightNumber);
@@ -105,7 +105,47 @@ test('uses the HTML part when the plain-text part is just a stub', () => {
   const [f] = extractFlights({
     id: 'y', subject: 'Booking confirmation', date: '2026-11-01',
     text: 'Your booking is confirmed. View this email in your browser.',
-    html: '<p>Flight UK 955</p><p>BOM → DEL</p><p>5 Dec 2026 10:00</p>',
+    html: '<p>PNR: HJ7K2L</p><p>Flight UK 955</p><p>BOM → DEL</p><p>5 Dec 2026 10:00</p>',
   });
   assert.equal(f.flightNumber, 'UK955');
+});
+
+// Cases reported from real use: an advert and a refund email were added as flights.
+test('adverts are ignored', () => {
+  assert.deepEqual(extractFlights({ id: 'ad', subject: 'Hurry! Only a few seats left to Delhi 💺', date: '2026-11-01',
+    text: 'Fly 6E 1464 Dubai (DXB) to Delhi (DEL) on 22 Nov 2026. Fares starting from AED 399. Book now!' }), []);
+  assert.deepEqual(extractFlights({ id: 'ad2', subject: 'Still planning your trip?', date: '2026-11-01',
+    text: 'You searched for 6E 1463 DEL - DXB on 22 Nov 2026. Complete your booking before prices go up.' }), []);
+});
+
+test('flights in emails without a PNR or ticket number are not added', () => {
+  assert.deepEqual(extractFlights({ id: 'n', subject: 'Flight schedule', date: '2026-11-01',
+    text: 'EK 512 DEL - DXB 10 Nov 2026' }), []);
+});
+
+test('refund / cancellation emails mark the flight cancelled', () => {
+  const [r] = extractFlights({ id: 'rf', subject: 'Regarding Refund Status of Your Flight Booking', date: '2026-11-02',
+    text: 'Your refund has been processed for EK 512 DEL - DXB on 10 Nov 2026.' });
+  assert.equal(r.cancelled, true);
+  const booking = extractFlights({ id: 'bk', subject: 'Your Emirates booking', date: '2026-10-01',
+    text: 'Booking reference: K7XQ2M\nEK 512 DEL - DXB 10 Nov 2026 16:15 18:35' });
+  assert.equal(booking[0].cancelled, false);
+  const merged = mergeFlights([...booking, r]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].cancelled, true);
+});
+
+test('a real booking that mentions its cancellation policy or an offer is still a booking', () => {
+  const [f] = extractFlights({ id: 'ok', subject: 'Booking confirmed: 6E 1464', date: '2026-11-01',
+    text: 'PNR: ZX4R9T\n6E 1464 DXB - DEL 4 Nov 2026 21:25 02:35\nCancellation policy: cancellation charges apply. Refund rules as per fare. Special offer: 10% off your next trip.' });
+  assert.equal(f.flightNumber, '6E1464');
+  assert.equal(f.cancelled, false);
+});
+
+test('classifyEmail', () => {
+  assert.deepEqual(classifyEmail({ subject: 'Your flight has been cancelled' }), { promo: false, cancelled: true });
+  assert.deepEqual(classifyEmail({ subject: 'Mega Sale: flights from ₹1,499' }), { promo: true, cancelled: false });
+  assert.deepEqual(classifyEmail({ subject: 'Your e-ticket', body: 'Your booking was successfully cancelled.' }), { promo: false, cancelled: true });
+  assert.deepEqual(classifyEmail({ subject: 'Booking confirmation', body: 'Free cancellation within 24 hours. Refund policy applies.' }), { promo: false, cancelled: false });
+  assert.deepEqual(classifyEmail({ subject: 'Your itinerary + exclusive offers inside' }), { promo: false, cancelled: false });
 });

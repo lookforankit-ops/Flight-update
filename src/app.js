@@ -43,6 +43,14 @@ function synced() {
 function saveSynced(map) { store.set('calendarSynced', JSON.stringify(map)); }
 
 // What, if anything, needs to happen in Google Calendar for this flight.
+// Calendar events this app created for upcoming flights that the latest scan no longer finds
+// (e.g. an advert or refund email was read as a booking before). Only after a real Gmail scan.
+function orphanEvents(map = synced()) {
+  if (!allFlights.length || allFlights.every(isDemo)) return [];
+  const known = new Set(allFlights.map(flightKey));
+  return Object.keys(map).filter((key) => !known.has(key) && daysUntil(key.split('|')[1] || '') >= 0);
+}
+
 function calendarState(f, map = synced()) {
   if (isDemo(f)) return 'demo';
   const entry = map[flightKey(f)];
@@ -207,13 +215,16 @@ function render() {
 
   const container = $('#flights');
   const map = synced();
-  const pending = allFlights.filter((f) => ['add', 'update', 'remove'].includes(calendarState(f, map)));
+  const orphans = orphanEvents(map);
+  const pending = [...allFlights.filter((f) => ['add', 'update', 'remove'].includes(calendarState(f, map))), ...orphans];
   const syncable = allFlights.filter((f) => !['none', 'demo'].includes(calendarState(f, map)) || (isDemo(f) && daysUntil(f.date) >= 0 && !f.cancelled));
-  $('#cal-all').hidden = syncable.length === 0;
+  $('#cal-all').hidden = syncable.length === 0 && !orphans.length;
   $('#cal-all').disabled = calendarBusy;
   $('#cal-count').hidden = pending.length === 0;
   $('#cal-count').textContent = String(pending.length);
-  const calTitle = pending.length
+  const calTitle = orphans.length
+    ? `Update Google Calendar (${orphans.length} event${orphans.length === 1 ? '' : 's'} to remove for flights no longer found)`
+    : pending.length
     ? `Sync ${pending.length} flight${pending.length === 1 ? '' : 's'} to Google Calendar`
     : 'All flights are in Google Calendar';
   $('#cal-all').title = calTitle;
@@ -310,6 +321,10 @@ function processMessages(messages) {
   renderSkipped();
   allFlights = mergeFlights(flights);
   store.set('lastResults', JSON.stringify({ at: Date.now(), flights: allFlights }));
+  const orphans = orphanEvents();
+  if (orphans.length) {
+    setTimeout(() => setStatus(`${orphans.length} calendar event${orphans.length === 1 ? ' is' : 's are'} for flights no longer found in your email. Tap the calendar button at the top to remove ${orphans.length === 1 ? 'it' : 'them'}.`, 'warn'), 0);
+  }
   render();
 }
 
@@ -393,10 +408,10 @@ function getCalendarToken() {
 }
 
 // Add/update/remove the given flights in Google Calendar.
-async function syncToCalendar(flights) {
+async function syncToCalendar(flights, orphanKeys = []) {
   if (calendarBusy) return;
   const real = flights.filter((f) => !isDemo(f));
-  if (!real.length) return setStatus('Demo flights can’t be added to your calendar. Sign in with Google to use your real flights.', 'warn');
+  if (!real.length && !orphanKeys.length) return setStatus('Demo flights can’t be added to your calendar. Sign in with Google to use your real flights.', 'warn');
   calendarBusy = true;
   document.querySelectorAll('button.cal, button.cal-btn, #cal-all').forEach((b) => { b.disabled = true; });
   const tokenPromise = getCalendarToken(); // start the popup synchronously, inside the click
@@ -425,6 +440,16 @@ async function syncToCalendar(flights) {
           throw new Error('The Google Calendar API is not enabled for your Google Cloud project. Enable it (see README) and try again.');
         }
         failed.push(`${f.flightNumber}: ${e.message}`);
+      }
+    }
+    for (const key of orphanKeys) {
+      try {
+        if (map[key]) await deleteEvent(token, map[key].id);
+        delete map[key];
+        saveSynced(map);
+        ok++;
+      } catch (e) {
+        failed.push(`${key.split('|')[0]}: ${e.message}`);
       }
     }
     if (failed.length) setStatus(`Calendar updated for ${ok} flight(s). Failed: ${failed.join('; ')}`, 'error');
@@ -491,8 +516,14 @@ function init() {
   $('#cal-all').addEventListener('click', () => {
     const map = synced();
     const todo = allFlights.filter((f) => ['add', 'update', 'remove', 'demo'].includes(calendarState(f, map)) && !(isDemo(f) && (f.cancelled || daysUntil(f.date) < 0)));
-    if (!todo.length) return setStatus('✓ All your upcoming flights are already in Google Calendar.', 'ok');
-    syncToCalendar(todo);
+    let orphans = orphanEvents(map);
+    if (orphans.length) {
+      const list = orphans.map((k) => { const [fn, d] = k.split('|'); return `• ${fn} on ${formatDate(d)}`; }).join('\n');
+      const ok = window.confirm(`These flights are in your Google Calendar but no booking for them was found in your email any more (for example, an advert or a refunded booking):\n\n${list}\n\nRemove them from your calendar?`);
+      if (!ok) orphans = [];
+    }
+    if (!todo.length && !orphans.length) return setStatus('✓ All your upcoming flights are already in Google Calendar.', 'ok');
+    syncToCalendar(todo, orphans);
   });
   // Logo didn't load: try the next source, then fall back to the code badge.
   $('#flights').addEventListener('error', (ev) => {
