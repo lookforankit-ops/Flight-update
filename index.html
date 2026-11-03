@@ -7,12 +7,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>My Flights</title>
+  <meta name="app-version" content="202611031634">
   <meta name="description" content="Lists your upcoming flights from booking emails in Gmail.">
   <meta name="apple-mobile-web-app-title" content="Flights">
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=202611031634">
   <script src="config.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -65,6 +66,7 @@
           <button id="demo-2" type="button">Load demo flights</button>
           <button id="signout" type="button" class="danger" hidden>Sign out</button>
         </div>
+        <p class="hint">App version <span id="app-version"></span> · <a href="#" id="hard-reload">Reload latest version</a></p>
         <details id="skipped" class="skipped" hidden>
           <summary></summary>
           <p class="hint">These matched the search but no flight could be read from them. If one is a real booking, copy its text (remove anything private), and share it so the reader can be taught that format.</p>
@@ -85,6 +87,6 @@
 
     <p class="privacy">Runs entirely in your browser with read-only Gmail access. Your emails are never sent to any server other than Google's. Tap a flight for booking details, calendar and check-in.</p>
   </main>
-  <script type="module" src="src/app.js"></script>
+  <script type="module" src="src/app.js?v=202611031634"></script>
 </body>
 </html>

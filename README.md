@@ -76,4 +76,6 @@ test/            parser and calendar tests
 npm test
 ```
 
+Before committing a change to the web app, run `node scripts/stamp-version.mjs`. It adds a new version to every script and stylesheet reference, so phones fetch the new files instead of using cached ones. The version is shown in Settings.
+
 Emails without structured data are parsed heuristically, so unusual layouts can be missed or misread. Flights found this way are labelled "Read from email text". If an email is missed, add a sample of it to `test/parser.test.js` and adjust `parseHeuristic`.

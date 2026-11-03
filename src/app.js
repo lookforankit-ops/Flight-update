@@ -1,8 +1,8 @@
-import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText } from './parser.js';
-import { DEFAULT_QUERY, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js';
-import { sampleMessages } from './samples.js';
-import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js';
-import { AIRPORT_TZ, CITIES } from './airports.js';
+import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText } from './parser.js?v=202611031634';
+import { DEFAULT_QUERY, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031634';
+import { sampleMessages } from './samples.js?v=202611031634';
+import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031634';
+import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031634';
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
@@ -477,6 +477,11 @@ function signOut() {
 function init() {
   $('#client-id').value = clientId();
   if (OLD_DEFAULT_QUERIES.includes(store.get('query', ''))) store.set('query', DEFAULT_QUERY);
+  $('#app-version').textContent = document.querySelector('meta[name=app-version]')?.content || 'dev';
+  $('#hard-reload').addEventListener('click', (e) => {
+    e.preventDefault();
+    location.replace(`${location.pathname}?reload=${Date.now()}`);
+  });
   $('#query').value = store.get('query', DEFAULT_QUERY);
   $('#skipped').addEventListener('click', async (ev) => {
     const btn = ev.target.closest('[data-copy]');
