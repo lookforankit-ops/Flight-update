@@ -7,13 +7,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>My Flights</title>
-  <meta name="app-version" content="202611040025">
+  <meta name="app-version" content="202611041104">
   <meta name="description" content="Lists your upcoming flights from booking emails in Gmail.">
   <meta name="apple-mobile-web-app-title" content="Flights">
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=202611040025">
+  <link rel="stylesheet" href="styles.css?v=202611041104">
   <script src="config.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -88,6 +88,7 @@
     <div class="toolbar" id="toolbar" hidden>
       <label class="pill"><input type="checkbox" id="show-past"><span>Past</span></label>
       <label class="pill"><input type="checkbox" id="show-cancelled"><span>Cancelled</span></label>
+      <button id="ics-all" class="pill accent" type="button" hidden></button>
       <span id="summary"></span>
     </div>
 
@@ -95,6 +96,6 @@
 
     <p class="privacy">Runs entirely in your browser with read-only Gmail access. Your emails are never sent to any server other than Google's. Tap a flight for booking details, calendar and check-in.</p>
   </main>
-  <script type="module" src="src/app.js?v=202611040025"></script>
+  <script type="module" src="src/app.js?v=202611041104"></script>
 </body>
 </html>

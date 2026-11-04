@@ -1,8 +1,9 @@
-import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611040025';
-import { DEFAULT_QUERY, DEFAULT_MAX_EMAILS, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611040025';
-import { sampleMessages } from './samples.js?v=202611040025';
-import { buildEvent as buildCalendarEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc, parseAlerts, DEFAULT_ALERT_HOURS } from './calendar.js?v=202611040025';
-import { AIRPORT_TZ, CITIES } from './airports.js?v=202611040025';
+import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611041104';
+import { DEFAULT_QUERY, DEFAULT_MAX_EMAILS, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611041104';
+import { sampleMessages } from './samples.js?v=202611041104';
+import { buildEvent as buildCalendarEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc, parseAlerts, DEFAULT_ALERT_HOURS } from './calendar.js?v=202611041104';
+import { AIRPORT_TZ, CITIES } from './airports.js?v=202611041104';
+import { buildIcs } from './ics.js?v=202611041104';
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
@@ -67,6 +68,32 @@ function calendarState(f, map = synced()) {
 }
 
 const DEFAULT_AGENT_URL = 'http://localhost:8787';
+
+// iPhone/iPad (including iPadOS that reports itself as a Mac).
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const ICS_LABEL = IS_IOS ? 'Add to iPhone Calendar' : 'Download calendar file (.ics)';
+
+// Calendar file with the alerts inside, for the iPhone Calendar app (or Apple Calendar / Outlook).
+function exportIcs(flights) {
+  const real = flights.filter((f) => !isDemo(f) && !f.cancelled && daysUntil(f.date) >= 0);
+  if (!real.length) {
+    return setStatus(flights.some(isDemo) ? 'Demo flights can’t be added to your calendar. Sign in with Google to use your real flights.' : 'No upcoming flights to add.', 'warn');
+  }
+  const ics = buildIcs(real, { alertMinutes: alertMinutes() });
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+  const name = real.length === 1 ? `flight-${real[0].flightNumber}-${real[0].date}.ics` : 'my-flights.ics';
+  if (IS_IOS) {
+    // Safari opens calendar files in the Calendar app ("Add All"), or offers to download them.
+    window.location.href = url;
+  } else {
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  setStatus(`Calendar file for ${real.length} flight${real.length === 1 ? '' : 's'} created${IS_IOS ? '. Tap “Add All” when the Calendar app asks (if Safari downloads it instead, open it from Downloads)' : ''}. Adding the same flight again creates a second copy.`, 'ok');
+}
 
 function checkinLink(f) {
   if (f.cancelled || daysUntil(f.date) < 0) return '';
@@ -236,6 +263,7 @@ function render() {
   $('#cal-all').title = calTitle;
   $('#cal-all').setAttribute('aria-label', calTitle);
   $('#toolbar').hidden = allFlights.length === 0;
+  $('#ics-all').hidden = !upcomingFlights(allFlights).length;
   $('#welcome').hidden = allFlights.length > 0 || !!accessToken;
 
   const upcomingCount = upcomingFlights(allFlights).length;
@@ -288,6 +316,7 @@ function render() {
             <div class="actions">
               ${calendarControl(f, map)}
               ${checkinLink(f)}
+              ${!f.cancelled && daysUntil(f.date) >= 0 ? `<button type="button" data-ics="${escapeHtml(flightKey(f))}">📱 ${ICS_LABEL}</button>` : ''}
             </div>
             <div class="src">✉️ ${link ? `<a href="${link}" target="_blank" rel="noopener">` : ''}${escapeHtml(email.subject || '(no subject)')}${link ? '</a>' : ''}</div>
             ${f.source === 'text' ? '<div class="note">Read from the email text rather than structured booking data, so double-check the details.</div>' : ''}
@@ -603,7 +632,15 @@ function init() {
     const row = ev.target.closest?.('article.flight');
     if (row && ev.target === row && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); toggleRow(row); }
   });
+  $('#ics-all').textContent = IS_IOS ? 'Add all to iPhone Calendar' : 'Download all (.ics)';
+  $('#ics-all').addEventListener('click', () => exportIcs(upcomingFlights(allFlights)));
   $('#flights').addEventListener('click', (ev) => {
+    const icsBtn = ev.target.closest('button[data-ics]');
+    if (icsBtn) {
+      const f = allFlights.find((x) => flightKey(x) === icsBtn.dataset.ics);
+      if (f) exportIcs([f]);
+      return;
+    }
     const btn = ev.target.closest('button[data-cal]');
     if (!btn) {
       const row = ev.target.closest('article.flight');
