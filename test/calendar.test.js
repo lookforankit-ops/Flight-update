@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildEvent, eventId, zonedToUtc, eventHash } from '../src/calendar.js';
+import { buildEvent, eventId, zonedToUtc, eventHash, parseAlerts } from '../src/calendar.js';
 
 const base = {
   flightNumber: '6E2134', airline: 'IndiGo', from: 'DEL', to: 'BLR', date: '2026-11-20',
@@ -53,4 +53,19 @@ test('zonedToUtc handles DST and hash changes with content', () => {
   assert.equal(new Date(zonedToUtc('2026-07-01', '12:00', 'Europe/London')).toISOString(), '2026-07-01T11:00:00.000Z');
   assert.equal(new Date(zonedToUtc('2026-12-01', '12:00', 'Europe/London')).toISOString(), '2026-12-01T12:00:00.000Z');
   assert.notEqual(eventHash(buildEvent(base)), eventHash(buildEvent({ ...base, departureTime: '06:20' })));
+});
+
+test('events carry explicit popup alerts (default 1 day and 3 hours before)', () => {
+  assert.deepEqual(buildEvent(base).reminders, { useDefault: false, overrides: [{ method: 'popup', minutes: 1440 }, { method: 'popup', minutes: 180 }] });
+  assert.deepEqual(buildEvent(base, { alertMinutes: [] }).reminders, { useDefault: false, overrides: [] });
+  // Changing alerts changes the hash, so already-synced events show as needing an update.
+  assert.notEqual(eventHash(buildEvent(base)), eventHash(buildEvent(base, { alertMinutes: [60] })));
+});
+
+test('parseAlerts', () => {
+  assert.deepEqual(parseAlerts('24h, 3h'), [1440, 180]);
+  assert.deepEqual(parseAlerts('2 days, 4 hours, 30m, 3'), [2880, 240, 180, 30]);
+  assert.deepEqual(parseAlerts(''), []);
+  assert.deepEqual(parseAlerts('soon, 5w'), []);
+  assert.deepEqual(parseAlerts('1,2,3,4,5,6'), [360, 300, 240, 180, 120]);
 });

@@ -1,5 +1,5 @@
 // Google Calendar sync: turns a flight into a Calendar event and upserts/deletes it.
-import { AIRPORT_TZ } from './airports.js?v=202611031731';
+import { AIRPORT_TZ } from './airports.js?v=202611040025';
 
 const API = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
 
@@ -43,7 +43,23 @@ function localTimeOf(utcMs, tz) {
   return new Date(utcMs + off * 60000).toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
 }
 
-export function buildEvent(flight, { defaultTz = Intl.DateTimeFormat().resolvedOptions().timeZone } = {}) {
+export const DEFAULT_ALERT_HOURS = [24, 3];
+
+// "24, 3" or "1 day, 3h, 30m" -> minutes before departure (Calendar allows at most 5, up to 4 weeks).
+export function parseAlerts(text) {
+  const out = [];
+  for (const part of String(text ?? '').split(/[,;]+/)) {
+    const m = part.trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(d|days?|h|hrs?|hours?|m|mins?|minutes?)?$/);
+    if (!m) continue;
+    const n = Number(m[1]);
+    const unit = m[2] || 'h';
+    const minutes = Math.round(unit.startsWith('d') ? n * 1440 : unit.startsWith('m') ? n : n * 60);
+    if (minutes >= 0 && minutes <= 40320 && !out.includes(minutes)) out.push(minutes);
+  }
+  return out.sort((a, b) => b - a).slice(0, 5);
+}
+
+export function buildEvent(flight, { defaultTz = Intl.DateTimeFormat().resolvedOptions().timeZone, alertMinutes = DEFAULT_ALERT_HOURS.map((h) => h * 60) } = {}) {
   const depTz = AIRPORT_TZ[flight.from];
   const arrTz = AIRPORT_TZ[flight.to];
   const notes = [];
@@ -109,13 +125,15 @@ export function buildEvent(flight, { defaultTz = Intl.DateTimeFormat().resolvedO
     start,
     end,
     transparency: 'opaque',
+    // Explicit alerts: the calendar's own defaults are often empty.
+    reminders: { useDefault: false, overrides: alertMinutes.map((minutes) => ({ method: 'popup', minutes })) },
     extendedProperties: { private: { flightUpdate: '1', flightKey: `${flight.flightNumber}|${flight.date}` } },
   };
 }
 
 // A short fingerprint of the event contents, to tell whether Calendar is out of date.
 export function eventHash(event) {
-  const s = JSON.stringify([event.summary, event.description, event.start, event.end, event.location]);
+  const s = JSON.stringify([event.summary, event.description, event.start, event.end, event.location, event.reminders]);
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
   return (h >>> 0).toString(36);

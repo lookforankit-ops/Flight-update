@@ -7,13 +7,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>My Flights</title>
-  <meta name="app-version" content="202611031731">
+  <meta name="app-version" content="202611040025">
   <meta name="description" content="Lists your upcoming flights from booking emails in Gmail.">
   <meta name="apple-mobile-web-app-title" content="Flights">
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=202611031731">
+  <link rel="stylesheet" href="styles.css?v=202611040025">
   <script src="config.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -56,6 +56,10 @@
         <label>Max emails to scan
           <input id="max-emails" type="number" min="10" max="2000" step="10">
         </label>
+        <label>Calendar alerts before departure
+          <input id="alerts" type="text" placeholder="24h, 3h" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="hint">Comma-separated, e.g. <code>24h, 3h</code> or <code>2 days, 4h, 30m</code> (up to 5). Leave empty for no alerts. After changing, tap the calendar button to update events already in your calendar.</p>
         <label>Check-in agent address
           <input id="agent-url" type="text" placeholder="http://localhost:8787" autocomplete="off" spellcheck="false">
         </label>
@@ -91,6 +95,6 @@
 
     <p class="privacy">Runs entirely in your browser with read-only Gmail access. Your emails are never sent to any server other than Google's. Tap a flight for booking details, calendar and check-in.</p>
   </main>
-  <script type="module" src="src/app.js?v=202611031731"></script>
+  <script type="module" src="src/app.js?v=202611040025"></script>
 </body>
 </html>

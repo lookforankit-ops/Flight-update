@@ -1,8 +1,8 @@
-import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611031731';
-import { DEFAULT_QUERY, DEFAULT_MAX_EMAILS, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611031731';
-import { sampleMessages } from './samples.js?v=202611031731';
-import { buildEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc } from './calendar.js?v=202611031731';
-import { AIRPORT_TZ, CITIES } from './airports.js?v=202611031731';
+import { extractFlights, mergeFlights, upcomingFlights, AIRLINES, htmlToText, classifyEmail } from './parser.js?v=202611040025';
+import { DEFAULT_QUERY, DEFAULT_MAX_EMAILS, OLD_DEFAULT_QUERIES, listMessageIds, getMessages } from './gmail.js?v=202611040025';
+import { sampleMessages } from './samples.js?v=202611040025';
+import { buildEvent as buildCalendarEvent, eventHash, upsertEvent, deleteEvent, zonedToUtc, parseAlerts, DEFAULT_ALERT_HOURS } from './calendar.js?v=202611040025';
+import { AIRPORT_TZ, CITIES } from './airports.js?v=202611040025';
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
@@ -33,6 +33,10 @@ function setStatus(msg, kind = '') {
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+const DEFAULT_ALERTS = DEFAULT_ALERT_HOURS.map((h) => `${h}h`).join(', ');
+const alertMinutes = () => parseAlerts(store.get('alerts', DEFAULT_ALERTS));
+const buildEvent = (f) => buildCalendarEvent(f, { alertMinutes: alertMinutes() });
 
 const flightKey = (f) => `${f.flightNumber}|${f.date}`;
 const isDemo = (f) => f.emails.every((e) => e.id.startsWith('demo-'));
@@ -541,6 +545,7 @@ function init() {
   if (store.get('maxEmails', '') === '300') store.set('maxEmails', String(DEFAULT_MAX_EMAILS)); // old default
   $('#max-emails').value = store.get('maxEmails', String(DEFAULT_MAX_EMAILS));
   $('#agent-url').value = store.get('agentUrl', '') || DEFAULT_AGENT_URL;
+  $('#alerts').value = store.get('alerts', DEFAULT_ALERTS);
   $('#origin').textContent = location.origin;
 
   $('#save-settings').addEventListener('click', () => {
@@ -548,6 +553,8 @@ function init() {
     store.set('query', $('#query').value.trim() || DEFAULT_QUERY);
     store.set('maxEmails', String(Math.max(10, Math.min(2000, Number($('#max-emails').value) || DEFAULT_MAX_EMAILS))));
     store.set('agentUrl', $('#agent-url').value.trim() || DEFAULT_AGENT_URL);
+    const alerts = parseAlerts($('#alerts').value);
+    store.set('alerts', alerts.length || !$('#alerts').value.trim() ? alerts.map((m) => (m % 60 ? `${m}m` : `${m / 60}h`)).join(', ') : DEFAULT_ALERTS);
     render();
     toggleSettings(false);
     setStatus('Settings saved.', 'ok');
